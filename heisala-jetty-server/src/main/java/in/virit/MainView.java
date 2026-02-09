@@ -1,29 +1,64 @@
 package in.virit;
 
-import com.vaadin.flow.component.dependency.CssImport;
-import com.vaadin.flow.component.dependency.StyleSheet;
+import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.html.H1;
-import com.vaadin.flow.component.html.ListItem;
-import com.vaadin.flow.component.html.UnorderedList;
+import com.vaadin.flow.component.html.Image;
+import com.vaadin.flow.component.notification.Notification;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
 import com.vaadin.flow.router.Route;
-import com.vaadin.flow.theme.lumo.Lumo;
+import com.vaadin.flow.server.StreamResource;
+import jakarta.inject.Inject;
+
+import java.io.ByteArrayInputStream;
+import java.time.LocalDateTime;
+import java.time.format.DateTimeFormatter;
 
 @Route
-@StyleSheet(Lumo.STYLESHEET)
 public class MainView extends VerticalLayout {
 
-    public MainView() {
-        add(new H1("Jetty @ Heisala"));
-        add("It works!? TODO:");
+    private static final DateTimeFormatter TIMESTAMP_FORMAT = DateTimeFormatter.ofPattern("HH:mm:ss");
 
-        add(new UnorderedList(){{
-            add(new ListItem("Web cam"));
-            add(new ListItem("Web cam rotations with servo motor"));
-            add(new ListItem("Automatic timelapse videos"));
-            add(new ListItem("Water level sensor using a radar module"));
-            add(new ListItem("API/communication to layer to Catch-A-Fish application"));
+    private final CameraService cameraService;
+    private final Image capturedImage;
+
+    @Inject
+    public MainView(CameraService cameraService) {
+        this.cameraService = cameraService;
+
+        add(new H1("Jetty @ Heisala"));
+
+        add(new Button("Take Photo", e -> capturePhoto()) {{
+            getStyle().setFontSize("1.5em");
+            getStyle().setPadding("1em 2em");
         }});
 
+        capturedImage = new Image();
+        capturedImage.setMaxWidth("100%");
+        capturedImage.setMaxHeight("80vh");
+        capturedImage.setVisible(false);
+        add(capturedImage);
+
+        setSizeFull();
+        setAlignItems(Alignment.CENTER);
+    }
+
+    private void capturePhoto() {
+        try {
+            byte[] jpeg = cameraService.captureJpeg(1920, 1080);
+
+            String timestamp = LocalDateTime.now().format(TIMESTAMP_FORMAT);
+            capturedImage.setSrc(downloadEvent -> {
+                downloadEvent.setFileName("capture_" + timestamp + ".jpg");
+                downloadEvent.setContentType("image/jpeg");
+                downloadEvent.setContentLength(jpeg.length);
+                downloadEvent.getOutputStream().write(jpeg);
+            });
+            capturedImage.setAlt("Captured at " + timestamp);
+            capturedImage.setVisible(true);
+
+            Notification.show("Photo captured at " + timestamp, 3000, Notification.Position.BOTTOM_CENTER);
+        } catch (Exception ex) {
+            Notification.show("Capture failed: " + ex.getMessage(), 5000, Notification.Position.MIDDLE);
+        }
     }
 }
