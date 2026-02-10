@@ -327,22 +327,6 @@ public class CameraView extends VerticalLayout {
 
     }
 
-    private static class HelpButton extends Button {
-        HelpButton(String markdownContent) {
-            super(VaadinIcon.QUESTION_CIRCLE.create());
-            addThemeVariants(ButtonVariant.LUMO_TERTIARY_INLINE);
-            addClickListener(e -> new Dialog() {{
-                setHeaderTitle("Help");
-                setWidth("600px");
-                setMaxHeight("80vh");
-                add(new Markdown(markdownContent));
-                getFooter().add(new Button("Close", ce -> close()) {{
-                    addThemeVariants(ButtonVariant.LUMO_PRIMARY);
-                }});
-            }}.open());
-        }
-    }
-
     private class ButtonBar extends HorizontalLayout {
         private final Button quickPhotoButton = new Button("Quick Photo", e -> captureQuickPhoto());
         private final Button fullResButton = new Button("Full Resolution JPEG", e -> captureFullResolution());

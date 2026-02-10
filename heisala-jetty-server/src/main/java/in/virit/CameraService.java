@@ -53,6 +53,9 @@ public class CameraService {
     @ConfigProperty(name = "camera.exposure.gain", defaultValue = "1.0")
     float defaultAnalogueGain;
 
+    @Inject
+    TimelapseService timelapseService;
+
     private CameraSettings currentSettings;
     private LocalDateTime lastCaptureTime;
     private boolean cameraAvailable;
@@ -210,7 +213,7 @@ public class CameraService {
     }
 
     /**
-     * Saves the given JPEG bytes as the latest photo on disk.
+     * Saves the given JPEG bytes as the latest photo on disk and for timelapse.
      *
      * @param jpeg the JPEG image data
      */
@@ -220,6 +223,9 @@ public class CameraService {
             Files.write(photoPath, jpeg);
             lastCaptureTime = LocalDateTime.now();
             LOG.info("Latest photo saved to " + photoPath.toAbsolutePath());
+
+            // Also save for timelapse
+            timelapseService.saveTimelapseImage(jpeg, lastCaptureTime);
         } catch (IOException e) {
             LOG.error("Failed to save latest photo", e);
         }
@@ -252,9 +258,18 @@ public class CameraService {
     }
 
     /**
-     * Scheduled task that captures a photo every 5 minutes.
+     * Returns the path to the latest photo file.
+     *
+     * @return path to the latest photo
      */
-    @Scheduled(every = "5m")
+    public Path getLatestPhotoPath() {
+        return Path.of(LATEST_PHOTO_FILENAME);
+    }
+
+    /**
+     * Scheduled task that captures a photo every 15 seconds.
+     */
+    @Scheduled(every = "15s")
     void periodicCapture() {
         if (!cameraAvailable) {
             LOG.debug("Skipping periodic capture - camera not available");
