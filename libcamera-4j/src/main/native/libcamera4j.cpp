@@ -6,6 +6,7 @@
 
 #include <jni.h>
 #include <libcamera/libcamera.h>
+#include <libcamera/control_ids.h>
 
 #include <memory>
 #include <vector>
@@ -15,6 +16,11 @@
 #include <cstring>
 #include <sys/mman.h>
 #include <unistd.h>
+#include <ctime>
+#include <cmath>
+#include <algorithm>
+#include <cerrno>
+#include <cstdio>
 
 using namespace libcamera;
 
@@ -663,13 +669,41 @@ JNIEXPORT jlong JNICALL Java_in_virit_libcamera4j_FrameBuffer_nativeMapBuffer(
     FrameBuffer* fb = buffers[bufferIndex].get();
     const auto& fbPlanes = fb->planes();
 
+    if (fbPlanes.empty()) {
+        throwLibCameraException(env, "FrameBuffer has no planes");
+        return 0;
+    }
+
     MappedBuffer mappedBuffer;
     mappedBuffer.totalLength = 0;
 
     // Map all planes
-    for (const auto& plane : fbPlanes) {
-        // Calculate the size to map (offset + length)
+    for (size_t i = 0; i < fbPlanes.size(); i++) {
+        const auto& plane = fbPlanes[i];
+
+        // Validate plane parameters
+        if (plane.fd.get() < 0) {
+            for (auto& mp : mappedBuffer.planes) {
+                munmap(mp.data, mp.length);
+            }
+            char errMsg[128];
+            snprintf(errMsg, sizeof(errMsg), "Invalid plane fd at index %zu", i);
+            throwLibCameraException(env, errMsg);
+            return 0;
+        }
+
+        // Calculate the size to map - use the actual plane length
+        // For raw buffers, the offset might be 0 and length is the full buffer size
         size_t mapSize = plane.offset + plane.length;
+        if (mapSize == 0) {
+            for (auto& mp : mappedBuffer.planes) {
+                munmap(mp.data, mp.length);
+            }
+            char errMsg[128];
+            snprintf(errMsg, sizeof(errMsg), "Zero-size plane at index %zu", i);
+            throwLibCameraException(env, errMsg);
+            return 0;
+        }
 
         void* data = mmap(nullptr, mapSize, PROT_READ, MAP_SHARED, plane.fd.get(), 0);
         if (data == MAP_FAILED) {
@@ -677,7 +711,11 @@ JNIEXPORT jlong JNICALL Java_in_virit_libcamera4j_FrameBuffer_nativeMapBuffer(
             for (auto& mp : mappedBuffer.planes) {
                 munmap(mp.data, mp.length);
             }
-            throwLibCameraException(env, "Failed to mmap buffer plane");
+            char errMsg[128];
+            snprintf(errMsg, sizeof(errMsg),
+                     "Failed to mmap buffer plane %zu (fd=%d, size=%zu): %s",
+                     i, plane.fd.get(), mapSize, strerror(errno));
+            throwLibCameraException(env, errMsg);
             return 0;
         }
 
@@ -816,4 +854,176 @@ JNIEXPORT jlong JNICALL Java_in_virit_libcamera4j_Request_nativeGetSequence(
     return 0;
 }
 
+// -----------------------------------------------------------------------------
+// Request metadata extraction (EXIF-like data)
+// -----------------------------------------------------------------------------
+
+JNIEXPORT jlong JNICALL Java_in_virit_libcamera4j_Request_nativeGetExposureTime(
+    JNIEnv* env, jobject obj, jlong handle)
+{
+    std::lock_guard<std::recursive_mutex> lock(g_mutex);
+    auto it = g_requests.find(handle);
+    if (it == g_requests.end()) {
+        return 0;
+    }
+
+    const ControlList& metadata = it->second->metadata();
+    auto expTime = metadata.get(controls::ExposureTime);
+    if (expTime) {
+        return *expTime;
+    }
+    return 0;
+}
+
+JNIEXPORT jdouble JNICALL Java_in_virit_libcamera4j_Request_nativeGetAnalogueGain(
+    JNIEnv* env, jobject obj, jlong handle)
+{
+    std::lock_guard<std::recursive_mutex> lock(g_mutex);
+    auto it = g_requests.find(handle);
+    if (it == g_requests.end()) {
+        return 1.0;
+    }
+
+    const ControlList& metadata = it->second->metadata();
+    auto gain = metadata.get(controls::AnalogueGain);
+    if (gain) {
+        return *gain;
+    }
+    return 1.0;
+}
+
+JNIEXPORT jdouble JNICALL Java_in_virit_libcamera4j_Request_nativeGetDigitalGain(
+    JNIEnv* env, jobject obj, jlong handle)
+{
+    std::lock_guard<std::recursive_mutex> lock(g_mutex);
+    auto it = g_requests.find(handle);
+    if (it == g_requests.end()) {
+        return 1.0;
+    }
+
+    const ControlList& metadata = it->second->metadata();
+    auto gain = metadata.get(controls::DigitalGain);
+    if (gain) {
+        return *gain;
+    }
+    return 1.0;
+}
+
+JNIEXPORT jdoubleArray JNICALL Java_in_virit_libcamera4j_Request_nativeGetColourGains(
+    JNIEnv* env, jobject obj, jlong handle)
+{
+    std::lock_guard<std::recursive_mutex> lock(g_mutex);
+    auto it = g_requests.find(handle);
+
+    jdoubleArray result = env->NewDoubleArray(2);
+    jdouble defaults[] = {1.0, 1.0};
+
+    if (it == g_requests.end()) {
+        env->SetDoubleArrayRegion(result, 0, 2, defaults);
+        return result;
+    }
+
+    const ControlList& metadata = it->second->metadata();
+    auto gains = metadata.get(controls::ColourGains);
+    if (gains) {
+        jdouble values[] = {(*gains)[0], (*gains)[1]};
+        env->SetDoubleArrayRegion(result, 0, 2, values);
+    } else {
+        env->SetDoubleArrayRegion(result, 0, 2, defaults);
+    }
+    return result;
+}
+
+JNIEXPORT jint JNICALL Java_in_virit_libcamera4j_Request_nativeGetColourTemperature(
+    JNIEnv* env, jobject obj, jlong handle)
+{
+    std::lock_guard<std::recursive_mutex> lock(g_mutex);
+    auto it = g_requests.find(handle);
+    if (it == g_requests.end()) {
+        return 0;
+    }
+
+    const ControlList& metadata = it->second->metadata();
+    auto temp = metadata.get(controls::ColourTemperature);
+    if (temp) {
+        return *temp;
+    }
+    return 0;
+}
+
+JNIEXPORT jdouble JNICALL Java_in_virit_libcamera4j_Request_nativeGetLux(
+    JNIEnv* env, jobject obj, jlong handle)
+{
+    std::lock_guard<std::recursive_mutex> lock(g_mutex);
+    auto it = g_requests.find(handle);
+    if (it == g_requests.end()) {
+        return 0.0;
+    }
+
+    const ControlList& metadata = it->second->metadata();
+    auto lux = metadata.get(controls::Lux);
+    if (lux) {
+        return *lux;
+    }
+    return 0.0;
+}
+
+// -----------------------------------------------------------------------------
+// DNG-specific metadata extraction
+// -----------------------------------------------------------------------------
+
+JNIEXPORT jintArray JNICALL Java_in_virit_libcamera4j_Request_nativeGetSensorBlackLevels(
+    JNIEnv* env, jobject obj, jlong handle)
+{
+    std::lock_guard<std::recursive_mutex> lock(g_mutex);
+    jintArray result = env->NewIntArray(4);
+    jint defaults[] = {4096, 4096, 4096, 4096};  // Default for 10-bit sensor
+
+    auto it = g_requests.find(handle);
+    if (it == g_requests.end()) {
+        env->SetIntArrayRegion(result, 0, 4, defaults);
+        return result;
+    }
+
+    const ControlList& metadata = it->second->metadata();
+    auto blackLevel = metadata.get(controls::SensorBlackLevels);
+    if (blackLevel) {
+        jint levels[] = {(*blackLevel)[0], (*blackLevel)[1], (*blackLevel)[2], (*blackLevel)[3]};
+        env->SetIntArrayRegion(result, 0, 4, levels);
+    } else {
+        env->SetIntArrayRegion(result, 0, 4, defaults);
+    }
+    return result;
+}
+
+JNIEXPORT jdoubleArray JNICALL Java_in_virit_libcamera4j_Request_nativeGetColourCorrectionMatrix(
+    JNIEnv* env, jobject obj, jlong handle)
+{
+    std::lock_guard<std::recursive_mutex> lock(g_mutex);
+    jdoubleArray result = env->NewDoubleArray(9);
+    // Identity matrix as default
+    jdouble defaults[] = {1.0, 0.0, 0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 1.0};
+
+    auto it = g_requests.find(handle);
+    if (it == g_requests.end()) {
+        env->SetDoubleArrayRegion(result, 0, 9, defaults);
+        return result;
+    }
+
+    const ControlList& metadata = it->second->metadata();
+    auto ccm = metadata.get(controls::ColourCorrectionMatrix);
+    if (ccm) {
+        jdouble values[9];
+        for (int i = 0; i < 9; i++) {
+            values[i] = (*ccm)[i];
+        }
+        env->SetDoubleArrayRegion(result, 0, 9, values);
+    } else {
+        env->SetDoubleArrayRegion(result, 0, 9, defaults);
+    }
+    return result;
+}
+
 } // extern "C"
+
+// Note: DNG writing was moved to pure Java (DngWriter.java)

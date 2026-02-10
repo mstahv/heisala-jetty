@@ -23,6 +23,18 @@ public class PixelFormat {
     private static final int FOURCC_YUV420 = fourcc('Y', 'U', '1', '2');
     private static final int FOURCC_MJPEG = fourcc('M', 'J', 'P', 'G');
 
+    // Raw Bayer formats - 10-bit packed
+    private static final int FOURCC_SRGGB10 = fourcc('R', 'G', '1', '0');
+    private static final int FOURCC_SGRBG10 = fourcc('B', 'A', '1', '0');
+    private static final int FOURCC_SBGGR10 = fourcc('B', 'G', '1', '0');
+    private static final int FOURCC_SGBRG10 = fourcc('G', 'B', '1', '0');
+
+    // Raw Bayer formats - 12-bit packed
+    private static final int FOURCC_SRGGB12 = fourcc('R', 'G', '1', '2');
+    private static final int FOURCC_SGRBG12 = fourcc('B', 'A', '1', '2');
+    private static final int FOURCC_SBGGR12 = fourcc('B', 'G', '1', '2');
+    private static final int FOURCC_SGBRG12 = fourcc('G', 'B', '1', '2');
+
     // Pre-defined common formats
     public static final PixelFormat RGB888 = new PixelFormat(FOURCC_RGB888, 0);
     public static final PixelFormat BGR888 = new PixelFormat(FOURCC_BGR888, 0);
@@ -37,6 +49,18 @@ public class PixelFormat {
     public static final PixelFormat NV21 = new PixelFormat(FOURCC_NV21, 0);
     public static final PixelFormat YUV420 = new PixelFormat(FOURCC_YUV420, 0);
     public static final PixelFormat MJPEG = new PixelFormat(FOURCC_MJPEG, 0);
+
+    // Raw Bayer formats - 10-bit packed
+    public static final PixelFormat SRGGB10 = new PixelFormat(FOURCC_SRGGB10, 0);
+    public static final PixelFormat SGRBG10 = new PixelFormat(FOURCC_SGRBG10, 0);
+    public static final PixelFormat SBGGR10 = new PixelFormat(FOURCC_SBGGR10, 0);
+    public static final PixelFormat SGBRG10 = new PixelFormat(FOURCC_SGBRG10, 0);
+
+    // Raw Bayer formats - 12-bit packed
+    public static final PixelFormat SRGGB12 = new PixelFormat(FOURCC_SRGGB12, 0);
+    public static final PixelFormat SGRBG12 = new PixelFormat(FOURCC_SGRBG12, 0);
+    public static final PixelFormat SBGGR12 = new PixelFormat(FOURCC_SBGGR12, 0);
+    public static final PixelFormat SGBRG12 = new PixelFormat(FOURCC_SGBRG12, 0);
 
     private final int fourcc;
     private final long modifier;
@@ -110,6 +134,35 @@ public class PixelFormat {
      */
     public boolean isValid() {
         return fourcc != 0;
+    }
+
+    /**
+     * Returns whether this format is a raw Bayer format.
+     *
+     * @return true if this is a raw Bayer format
+     */
+    public boolean isRawBayer() {
+        return fourcc == FOURCC_SRGGB10 || fourcc == FOURCC_SGRBG10 ||
+               fourcc == FOURCC_SBGGR10 || fourcc == FOURCC_SGBRG10 ||
+               fourcc == FOURCC_SRGGB12 || fourcc == FOURCC_SGRBG12 ||
+               fourcc == FOURCC_SBGGR12 || fourcc == FOURCC_SGBRG12;
+    }
+
+    /**
+     * Returns the bit depth for raw Bayer formats.
+     *
+     * @return the bit depth (10, 12) or 0 if not a raw format
+     */
+    public int getRawBitDepth() {
+        if (fourcc == FOURCC_SRGGB10 || fourcc == FOURCC_SGRBG10 ||
+            fourcc == FOURCC_SBGGR10 || fourcc == FOURCC_SGBRG10) {
+            return 10;
+        }
+        if (fourcc == FOURCC_SRGGB12 || fourcc == FOURCC_SGRBG12 ||
+            fourcc == FOURCC_SBGGR12 || fourcc == FOURCC_SGBRG12) {
+            return 12;
+        }
+        return 0;
     }
 
     private static int fourcc(char a, char b, char c, char d) {

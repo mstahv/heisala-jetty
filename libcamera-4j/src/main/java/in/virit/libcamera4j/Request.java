@@ -176,6 +176,105 @@ public class Request {
                                   streamIndex, allocator.nativeHandle(), bufferIndex);
     }
 
+    /**
+     * Gets the exposure time in microseconds.
+     *
+     * @return exposure time in microseconds
+     */
+    public long getExposureTimeMicros() {
+        return nativeGetExposureTime(nativeHandle);
+    }
+
+    /**
+     * Gets the analogue gain applied by the sensor.
+     *
+     * @return analogue gain (1.0 = no gain)
+     */
+    public double getAnalogueGain() {
+        return nativeGetAnalogueGain(nativeHandle);
+    }
+
+    /**
+     * Gets the digital gain applied in processing.
+     *
+     * @return digital gain (1.0 = no gain)
+     */
+    public double getDigitalGain() {
+        return nativeGetDigitalGain(nativeHandle);
+    }
+
+    /**
+     * Gets the colour (white balance) gains.
+     *
+     * @return array of [red gain, blue gain]
+     */
+    public double[] getColourGains() {
+        return nativeGetColourGains(nativeHandle);
+    }
+
+    /**
+     * Gets the estimated colour temperature in Kelvin.
+     *
+     * @return colour temperature in Kelvin, or 0 if not available
+     */
+    public int getColourTemperature() {
+        return nativeGetColourTemperature(nativeHandle);
+    }
+
+    /**
+     * Gets the estimated scene lux level.
+     *
+     * @return lux value, or 0 if not available
+     */
+    public double getLux() {
+        return nativeGetLux(nativeHandle);
+    }
+
+    /**
+     * Gets the sensor black levels for each Bayer channel.
+     * Used for DNG metadata.
+     *
+     * @return array of 4 black level values (one per channel)
+     */
+    public int[] getSensorBlackLevels() {
+        return nativeGetSensorBlackLevels(nativeHandle);
+    }
+
+    /**
+     * Gets the colour correction matrix (3x3).
+     * Used for DNG color calibration.
+     *
+     * @return array of 9 values representing the 3x3 matrix (row-major)
+     */
+    public double[] getColourCorrectionMatrix() {
+        return nativeGetColourCorrectionMatrix(nativeHandle);
+    }
+
+    /**
+     * Gets all available metadata for a stream as an ImageMetadata record.
+     *
+     * @param streamIndex the stream index
+     * @return the image metadata
+     */
+    public ImageMetadata getMetadata(int streamIndex) {
+        StreamConfiguration streamConfig = configuration.get(streamIndex);
+        double[] colourGains = getColourGains();
+
+        return new ImageMetadata.Builder()
+            .timestamp(getTimestamp(streamIndex))
+            .sequence(getSequence(streamIndex))
+            .exposureTimeMicros(getExposureTimeMicros())
+            .analogueGain(getAnalogueGain())
+            .digitalGain(getDigitalGain())
+            .redGain(colourGains[0])
+            .blueGain(colourGains[1])
+            .colourTemperature(getColourTemperature())
+            .lux(getLux())
+            .size(streamConfig.size().width(), streamConfig.size().height())
+            .pixelFormat(streamConfig.pixelFormat().fourccString())
+            .build();
+    }
+
     @Override
     public String toString() {
         return "Request[cookie=" + cookie + ", status=" + status() + "]";
@@ -190,4 +289,12 @@ public class Request {
                                             long allocatorHandle, int bufferIndex);
     private native long nativeGetSequence(long handle, long configHandle, int streamIndex,
                                            long allocatorHandle, int bufferIndex);
+    private native long nativeGetExposureTime(long handle);
+    private native double nativeGetAnalogueGain(long handle);
+    private native double nativeGetDigitalGain(long handle);
+    private native double[] nativeGetColourGains(long handle);
+    private native int nativeGetColourTemperature(long handle);
+    private native double nativeGetLux(long handle);
+    private native int[] nativeGetSensorBlackLevels(long handle);
+    private native double[] nativeGetColourCorrectionMatrix(long handle);
 }

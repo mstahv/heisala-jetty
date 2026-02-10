@@ -9,10 +9,10 @@ package in.virit.libcamera4j;
 public enum StreamRole {
 
     /**
-     * Stream for live viewfinder display.
-     * Typically lower resolution for smooth preview.
+     * Raw stream for advanced processing.
+     * Provides unprocessed sensor data directly from the sensor.
      */
-    VIEWFINDER(0),
+    RAW(0),
 
     /**
      * Stream for still image capture.
@@ -27,10 +27,10 @@ public enum StreamRole {
     VIDEO_RECORDING(2),
 
     /**
-     * Raw stream for advanced processing.
-     * Provides unprocessed sensor data.
+     * Stream for live viewfinder display.
+     * Typically lower resolution for smooth preview.
      */
-    RAW(3);
+    VIEWFINDER(3);
 
     private final int value;
 

@@ -51,7 +51,7 @@ public class BuildForPi {
         // Step 2: Build Java (native lib is now in resources, will be embedded)
         System.out.println();
         System.out.println("Step 2/2: Building Java libraries (with embedded native library)...");
-        exitCode = runCommand(projectDir, "mvn", "clean", "package", "-DskipTests", "-q");
+        exitCode = runCommand(projectDir, "mvn", "clean", "install", "-DskipTests", "-q");
         if (exitCode != 0) {
             System.err.println("Maven build failed!");
             System.exit(exitCode);
