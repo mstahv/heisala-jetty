@@ -44,6 +44,12 @@
             <artifactId>libcamera-4j</artifactId>
             <version>1.0-SNAPSHOT</version>
         </dependency>
+
+        <dependency>
+            <groupId>in.virit</groupId>
+            <artifactId>viritin</artifactId>
+            <version>3.1.4-SNAPSHOT</version>
+        </dependency>
     </dependencies>
 
     <build>

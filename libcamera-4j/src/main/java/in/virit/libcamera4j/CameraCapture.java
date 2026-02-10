@@ -1,6 +1,8 @@
 package in.virit.libcamera4j;
 
 import javax.imageio.ImageIO;
+import java.awt.Graphics2D;
+import java.awt.geom.AffineTransform;
 import java.awt.image.BufferedImage;
 import java.io.ByteArrayOutputStream;
 import java.io.IOException;
@@ -53,7 +55,20 @@ public class CameraCapture {
      * @throws LibCameraException if capture fails
      */
     public static byte[] captureJpeg(int width, int height) {
-        return captureJpeg(width, height, DEFAULT_WARMUP_FRAMES);
+        return captureJpeg(width, height, DEFAULT_WARMUP_FRAMES, CameraSettings.defaults());
+    }
+
+    /**
+     * Captures a JPEG image at the specified resolution with custom settings.
+     *
+     * @param width desired image width
+     * @param height desired image height
+     * @param settings camera settings for rotation and focus
+     * @return JPEG-encoded image data
+     * @throws LibCameraException if capture fails
+     */
+    public static byte[] captureJpeg(int width, int height, CameraSettings settings) {
+        return captureJpeg(width, height, DEFAULT_WARMUP_FRAMES, settings);
     }
 
     /**
@@ -66,7 +81,21 @@ public class CameraCapture {
      * @throws LibCameraException if capture fails
      */
     public static byte[] captureJpeg(int width, int height, int warmupFrames) {
-        BufferedImage image = captureImage(width, height, warmupFrames);
+        return captureJpeg(width, height, warmupFrames, CameraSettings.defaults());
+    }
+
+    /**
+     * Captures a JPEG image at the specified resolution with custom settings.
+     *
+     * @param width desired image width
+     * @param height desired image height
+     * @param warmupFrames number of frames to capture before the final image (for auto-exposure)
+     * @param settings camera settings for rotation and focus
+     * @return JPEG-encoded image data
+     * @throws LibCameraException if capture fails
+     */
+    public static byte[] captureJpeg(int width, int height, int warmupFrames, CameraSettings settings) {
+        BufferedImage image = captureImage(width, height, warmupFrames, settings);
         return encodeJpeg(image);
     }
 
@@ -79,7 +108,7 @@ public class CameraCapture {
      * @throws LibCameraException if capture fails
      */
     public static BufferedImage captureImage(int width, int height) {
-        return captureImage(width, height, DEFAULT_WARMUP_FRAMES);
+        return captureImage(width, height, DEFAULT_WARMUP_FRAMES, CameraSettings.defaults());
     }
 
     /**
@@ -92,6 +121,20 @@ public class CameraCapture {
      * @throws LibCameraException if capture fails
      */
     public static BufferedImage captureImage(int width, int height, int warmupFrames) {
+        return captureImage(width, height, warmupFrames, CameraSettings.defaults());
+    }
+
+    /**
+     * Captures a BufferedImage at the specified resolution with custom settings.
+     *
+     * @param width desired image width
+     * @param height desired image height
+     * @param warmupFrames number of frames to capture before the final image
+     * @param settings camera settings for rotation and focus
+     * @return the captured image
+     * @throws LibCameraException if capture fails
+     */
+    public static BufferedImage captureImage(int width, int height, int warmupFrames, CameraSettings settings) {
         try (CameraManager manager = CameraManager.create()) {
             manager.start();
 
@@ -115,6 +158,7 @@ public class CameraCapture {
                 StreamConfiguration streamConfig = config.get(0);
                 streamConfig.setSize(new Size(width, height));
                 streamConfig.setBufferCount(DEFAULT_BUFFER_COUNT);
+
                 config.validate();
                 camera.configure(config);
 
@@ -124,6 +168,9 @@ public class CameraCapture {
                     Request request = camera.createRequest();
                     request.addBuffer(0, 0, allocator);
 
+                    // Apply focus settings
+                    applyCameraSettings(request, settings);
+
                     camera.start();
 
                     // Warm-up frames for auto-exposure
@@ -132,6 +179,7 @@ public class CameraCapture {
                         waitForRequest(request);
                         if (i < warmupFrames - 1) {
                             request.reuse();
+                            applyCameraSettings(request, settings);
                         }
                     }
 
@@ -144,13 +192,15 @@ public class CameraCapture {
                     FrameBuffer buffer = new FrameBuffer(allocator, config, 0, 0);
                     byte[] rawData = buffer.getData();
 
-                    return PixelFormatConverter.convert(
+                    BufferedImage image = PixelFormatConverter.convert(
                         rawData,
                         streamConfig.size().width(),
                         streamConfig.size().height(),
                         streamConfig.stride(),
                         streamConfig.pixelFormat()
                     );
+
+                    return applyTransform(image, settings.transform());
                 }
             } finally {
                 camera.release();
@@ -437,7 +487,20 @@ public class CameraCapture {
      * @throws LibCameraException if capture fails
      */
     public static CaptureResult captureWithMetadata(int width, int height) {
-        return captureWithMetadata(width, height, DEFAULT_WARMUP_FRAMES);
+        return captureWithMetadata(width, height, DEFAULT_WARMUP_FRAMES, CameraSettings.defaults());
+    }
+
+    /**
+     * Captures a JPEG image with full metadata at the specified resolution.
+     *
+     * @param width desired image width
+     * @param height desired image height
+     * @param settings camera settings for rotation and focus
+     * @return capture result containing JPEG data and metadata
+     * @throws LibCameraException if capture fails
+     */
+    public static CaptureResult captureWithMetadata(int width, int height, CameraSettings settings) {
+        return captureWithMetadata(width, height, DEFAULT_WARMUP_FRAMES, settings);
     }
 
     /**
@@ -450,6 +513,20 @@ public class CameraCapture {
      * @throws LibCameraException if capture fails
      */
     public static CaptureResult captureWithMetadata(int width, int height, int warmupFrames) {
+        return captureWithMetadata(width, height, warmupFrames, CameraSettings.defaults());
+    }
+
+    /**
+     * Captures a JPEG image with full metadata at the specified resolution.
+     *
+     * @param width desired image width
+     * @param height desired image height
+     * @param warmupFrames number of warm-up frames for auto-exposure
+     * @param settings camera settings for rotation and focus
+     * @return capture result containing JPEG data and metadata
+     * @throws LibCameraException if capture fails
+     */
+    public static CaptureResult captureWithMetadata(int width, int height, int warmupFrames, CameraSettings settings) {
         try (CameraManager manager = CameraManager.create()) {
             manager.start();
 
@@ -473,6 +550,7 @@ public class CameraCapture {
                 StreamConfiguration streamConfig = config.get(0);
                 streamConfig.setSize(new Size(width, height));
                 streamConfig.setBufferCount(DEFAULT_BUFFER_COUNT);
+
                 config.validate();
                 camera.configure(config);
 
@@ -482,6 +560,9 @@ public class CameraCapture {
                     Request request = camera.createRequest();
                     request.addBuffer(0, 0, allocator);
 
+                    // Apply focus settings
+                    applyCameraSettings(request, settings);
+
                     camera.start();
 
                     for (int i = 0; i < warmupFrames; i++) {
@@ -489,6 +570,7 @@ public class CameraCapture {
                         waitForRequest(request);
                         if (i < warmupFrames - 1) {
                             request.reuse();
+                            applyCameraSettings(request, settings);
                         }
                     }
 
@@ -512,6 +594,7 @@ public class CameraCapture {
                         streamConfig.pixelFormat()
                     );
 
+                    image = applyTransform(image, settings.transform());
                     byte[] jpeg = encodeJpeg(image);
                     return CaptureResult.ofJpeg(jpeg, metadata);
                 }
@@ -528,7 +611,18 @@ public class CameraCapture {
      * @throws LibCameraException if capture fails
      */
     public static CaptureResult captureFullResolutionWithMetadata() {
-        return captureFullResolutionWithMetadata(DEFAULT_WARMUP_FRAMES);
+        return captureFullResolutionWithMetadata(DEFAULT_WARMUP_FRAMES, CameraSettings.defaults());
+    }
+
+    /**
+     * Captures a full resolution JPEG with metadata.
+     *
+     * @param settings camera settings for rotation and focus
+     * @return capture result containing JPEG data and metadata
+     * @throws LibCameraException if capture fails
+     */
+    public static CaptureResult captureFullResolutionWithMetadata(CameraSettings settings) {
+        return captureFullResolutionWithMetadata(DEFAULT_WARMUP_FRAMES, settings);
     }
 
     /**
@@ -539,6 +633,18 @@ public class CameraCapture {
      * @throws LibCameraException if capture fails
      */
     public static CaptureResult captureFullResolutionWithMetadata(int warmupFrames) {
+        return captureFullResolutionWithMetadata(warmupFrames, CameraSettings.defaults());
+    }
+
+    /**
+     * Captures a full resolution JPEG with metadata.
+     *
+     * @param warmupFrames number of warm-up frames for auto-exposure
+     * @param settings camera settings for rotation and focus
+     * @return capture result containing JPEG data and metadata
+     * @throws LibCameraException if capture fails
+     */
+    public static CaptureResult captureFullResolutionWithMetadata(int warmupFrames, CameraSettings settings) {
         try (CameraManager manager = CameraManager.create()) {
             manager.start();
 
@@ -558,6 +664,7 @@ public class CameraCapture {
 
                 StreamConfiguration streamConfig = config.get(0);
                 streamConfig.setBufferCount(DEFAULT_BUFFER_COUNT);
+
                 config.validate();
                 camera.configure(config);
 
@@ -567,6 +674,9 @@ public class CameraCapture {
                     Request request = camera.createRequest();
                     request.addBuffer(0, 0, allocator);
 
+                    // Apply focus settings
+                    applyCameraSettings(request, settings);
+
                     camera.start();
 
                     for (int i = 0; i < warmupFrames; i++) {
@@ -574,6 +684,7 @@ public class CameraCapture {
                         waitForRequest(request);
                         if (i < warmupFrames - 1) {
                             request.reuse();
+                            applyCameraSettings(request, settings);
                         }
                     }
 
@@ -596,6 +707,7 @@ public class CameraCapture {
                         streamConfig.pixelFormat()
                     );
 
+                    image = applyTransform(image, settings.transform());
                     byte[] jpeg = encodeJpeg(image);
                     return CaptureResult.ofJpeg(jpeg, metadata);
                 }
@@ -696,7 +808,19 @@ public class CameraCapture {
      * @return a CompletableFuture that completes with the capture result
      */
     public static CompletableFuture<CaptureResult> captureWithMetadataAsync(int width, int height) {
-        return captureWithMetadataAsync(width, height, DEFAULT_WARMUP_FRAMES);
+        return captureWithMetadataAsync(width, height, DEFAULT_WARMUP_FRAMES, CameraSettings.defaults());
+    }
+
+    /**
+     * Asynchronously captures a JPEG with metadata at the specified resolution.
+     *
+     * @param width desired image width
+     * @param height desired image height
+     * @param settings camera settings for rotation and focus
+     * @return a CompletableFuture that completes with the capture result
+     */
+    public static CompletableFuture<CaptureResult> captureWithMetadataAsync(int width, int height, CameraSettings settings) {
+        return captureWithMetadataAsync(width, height, DEFAULT_WARMUP_FRAMES, settings);
     }
 
     /**
@@ -708,7 +832,20 @@ public class CameraCapture {
      * @return a CompletableFuture that completes with the capture result
      */
     public static CompletableFuture<CaptureResult> captureWithMetadataAsync(int width, int height, int warmupFrames) {
-        return CompletableFuture.supplyAsync(() -> captureWithMetadata(width, height, warmupFrames), executor);
+        return captureWithMetadataAsync(width, height, warmupFrames, CameraSettings.defaults());
+    }
+
+    /**
+     * Asynchronously captures a JPEG with metadata at the specified resolution.
+     *
+     * @param width desired image width
+     * @param height desired image height
+     * @param warmupFrames number of warm-up frames for auto-exposure
+     * @param settings camera settings for rotation and focus
+     * @return a CompletableFuture that completes with the capture result
+     */
+    public static CompletableFuture<CaptureResult> captureWithMetadataAsync(int width, int height, int warmupFrames, CameraSettings settings) {
+        return CompletableFuture.supplyAsync(() -> captureWithMetadata(width, height, warmupFrames, settings), executor);
     }
 
     /**
@@ -717,7 +854,17 @@ public class CameraCapture {
      * @return a CompletableFuture that completes with the capture result
      */
     public static CompletableFuture<CaptureResult> captureFullResolutionWithMetadataAsync() {
-        return captureFullResolutionWithMetadataAsync(DEFAULT_WARMUP_FRAMES);
+        return captureFullResolutionWithMetadataAsync(DEFAULT_WARMUP_FRAMES, CameraSettings.defaults());
+    }
+
+    /**
+     * Asynchronously captures a full resolution JPEG with metadata.
+     *
+     * @param settings camera settings for rotation and focus
+     * @return a CompletableFuture that completes with the capture result
+     */
+    public static CompletableFuture<CaptureResult> captureFullResolutionWithMetadataAsync(CameraSettings settings) {
+        return captureFullResolutionWithMetadataAsync(DEFAULT_WARMUP_FRAMES, settings);
     }
 
     /**
@@ -727,7 +874,18 @@ public class CameraCapture {
      * @return a CompletableFuture that completes with the capture result
      */
     public static CompletableFuture<CaptureResult> captureFullResolutionWithMetadataAsync(int warmupFrames) {
-        return CompletableFuture.supplyAsync(() -> captureFullResolutionWithMetadata(warmupFrames), executor);
+        return captureFullResolutionWithMetadataAsync(warmupFrames, CameraSettings.defaults());
+    }
+
+    /**
+     * Asynchronously captures a full resolution JPEG with metadata.
+     *
+     * @param warmupFrames number of warm-up frames for auto-exposure
+     * @param settings camera settings for rotation and focus
+     * @return a CompletableFuture that completes with the capture result
+     */
+    public static CompletableFuture<CaptureResult> captureFullResolutionWithMetadataAsync(int warmupFrames, CameraSettings settings) {
+        return CompletableFuture.supplyAsync(() -> captureFullResolutionWithMetadata(warmupFrames, settings), executor);
     }
 
     /**
@@ -763,7 +921,18 @@ public class CameraCapture {
      * @throws LibCameraException if capture or DNG writing fails
      */
     public static void captureDng(String path) {
-        captureDng(path, DEFAULT_WARMUP_FRAMES);
+        captureDng(path, DEFAULT_WARMUP_FRAMES, CameraSettings.defaults());
+    }
+
+    /**
+     * Captures a raw image and saves it as a DNG file.
+     *
+     * @param path the file path to save the DNG file
+     * @param settings camera settings for focus (rotation not supported in RAW mode)
+     * @throws LibCameraException if capture or DNG writing fails
+     */
+    public static void captureDng(String path, CameraSettings settings) {
+        captureDng(path, DEFAULT_WARMUP_FRAMES, settings);
     }
 
     /**
@@ -774,6 +943,18 @@ public class CameraCapture {
      * @throws LibCameraException if capture or DNG writing fails
      */
     public static void captureDng(String path, int warmupFrames) {
+        captureDng(path, warmupFrames, CameraSettings.defaults());
+    }
+
+    /**
+     * Captures a raw image and saves it as a DNG file.
+     *
+     * @param path the file path to save the DNG file
+     * @param warmupFrames number of warm-up frames for auto-exposure
+     * @param settings camera settings for focus (rotation not supported in RAW mode)
+     * @throws LibCameraException if capture or DNG writing fails
+     */
+    public static void captureDng(String path, int warmupFrames, CameraSettings settings) {
         try (CameraManager manager = CameraManager.create()) {
             manager.start();
 
@@ -821,6 +1002,10 @@ public class CameraCapture {
 
                     Request request = camera.createRequest();
                     request.addBuffer(0, 0, allocator);
+
+                    // Apply focus settings
+                    applyCameraSettings(request, settings);
+
                     camera.start();
 
                     // Warm-up frames for auto-exposure
@@ -829,6 +1014,7 @@ public class CameraCapture {
                         waitForRequest(request);
                         if (i < warmupFrames - 1) {
                             request.reuse();
+                            applyCameraSettings(request, settings);
                         }
                     }
 
@@ -895,7 +1081,7 @@ public class CameraCapture {
      * @return a CompletableFuture that completes when the DNG is saved
      */
     public static CompletableFuture<Void> captureDngAsync(String path) {
-        return captureDngAsync(path, DEFAULT_WARMUP_FRAMES);
+        return captureDngAsync(path, DEFAULT_WARMUP_FRAMES, CameraSettings.defaults());
     }
 
     /**
@@ -906,7 +1092,19 @@ public class CameraCapture {
      * @return a CompletableFuture that completes when the DNG is saved
      */
     public static CompletableFuture<Void> captureDngAsync(String path, int warmupFrames) {
-        return CompletableFuture.runAsync(() -> captureDng(path, warmupFrames), executor);
+        return captureDngAsync(path, warmupFrames, CameraSettings.defaults());
+    }
+
+    /**
+     * Asynchronously captures a raw image and saves it as a DNG file.
+     *
+     * @param path the file path to save the DNG file
+     * @param warmupFrames number of warm-up frames for auto-exposure
+     * @param settings camera settings for focus
+     * @return a CompletableFuture that completes when the DNG is saved
+     */
+    public static CompletableFuture<Void> captureDngAsync(String path, int warmupFrames, CameraSettings settings) {
+        return CompletableFuture.runAsync(() -> captureDng(path, warmupFrames, settings), executor);
     }
 
     /**
@@ -916,7 +1114,18 @@ public class CameraCapture {
      * @throws LibCameraException if capture or DNG creation fails
      */
     public static byte[] captureDngBytes() {
-        return captureDngBytes(DEFAULT_WARMUP_FRAMES);
+        return captureDngBytes(DEFAULT_WARMUP_FRAMES, CameraSettings.defaults());
+    }
+
+    /**
+     * Captures a raw image and returns it as DNG bytes.
+     *
+     * @param settings camera settings for focus
+     * @return the DNG file content as a byte array
+     * @throws LibCameraException if capture or DNG creation fails
+     */
+    public static byte[] captureDngBytes(CameraSettings settings) {
+        return captureDngBytes(DEFAULT_WARMUP_FRAMES, settings);
     }
 
     /**
@@ -927,11 +1136,23 @@ public class CameraCapture {
      * @throws LibCameraException if capture or DNG creation fails
      */
     public static byte[] captureDngBytes(int warmupFrames) {
+        return captureDngBytes(warmupFrames, CameraSettings.defaults());
+    }
+
+    /**
+     * Captures a raw image and returns it as DNG bytes.
+     *
+     * @param warmupFrames number of warm-up frames for auto-exposure
+     * @param settings camera settings for focus
+     * @return the DNG file content as a byte array
+     * @throws LibCameraException if capture or DNG creation fails
+     */
+    public static byte[] captureDngBytes(int warmupFrames, CameraSettings settings) {
         try {
             // Create a temporary file for the DNG
             Path tempFile = Files.createTempFile("capture_", ".dng");
             try {
-                captureDng(tempFile.toString(), warmupFrames);
+                captureDng(tempFile.toString(), warmupFrames, settings);
                 return Files.readAllBytes(tempFile);
             } finally {
                 Files.deleteIfExists(tempFile);
@@ -947,7 +1168,17 @@ public class CameraCapture {
      * @return a CompletableFuture that completes with the DNG bytes
      */
     public static CompletableFuture<byte[]> captureDngBytesAsync() {
-        return captureDngBytesAsync(DEFAULT_WARMUP_FRAMES);
+        return captureDngBytesAsync(DEFAULT_WARMUP_FRAMES, CameraSettings.defaults());
+    }
+
+    /**
+     * Asynchronously captures a raw image and returns it as DNG bytes.
+     *
+     * @param settings camera settings for focus
+     * @return a CompletableFuture that completes with the DNG bytes
+     */
+    public static CompletableFuture<byte[]> captureDngBytesAsync(CameraSettings settings) {
+        return captureDngBytesAsync(DEFAULT_WARMUP_FRAMES, settings);
     }
 
     /**
@@ -957,7 +1188,33 @@ public class CameraCapture {
      * @return a CompletableFuture that completes with the DNG bytes
      */
     public static CompletableFuture<byte[]> captureDngBytesAsync(int warmupFrames) {
-        return CompletableFuture.supplyAsync(() -> captureDngBytes(warmupFrames), executor);
+        return captureDngBytesAsync(warmupFrames, CameraSettings.defaults());
+    }
+
+    /**
+     * Asynchronously captures a raw image and returns it as DNG bytes.
+     *
+     * @param warmupFrames number of warm-up frames for auto-exposure
+     * @param settings camera settings for focus
+     * @return a CompletableFuture that completes with the DNG bytes
+     */
+    public static CompletableFuture<byte[]> captureDngBytesAsync(int warmupFrames, CameraSettings settings) {
+        return CompletableFuture.supplyAsync(() -> captureDngBytes(warmupFrames, settings), executor);
+    }
+
+    private static void applyCameraSettings(Request request, CameraSettings settings) {
+        // Focus settings
+        request.setAfMode(settings.afMode());
+        if (settings.afMode() == AfMode.MANUAL) {
+            request.setLensPosition(settings.lensPosition());
+        }
+
+        // Exposure settings
+        request.setAeEnable(settings.autoExposure());
+        if (!settings.autoExposure()) {
+            request.setExposureTime(settings.exposureTimeMicros());
+            request.setAnalogueGain(settings.analogueGain());
+        }
     }
 
     private static void waitForRequest(Request request) {
@@ -981,6 +1238,46 @@ public class CameraCapture {
         } catch (IOException e) {
             throw new LibCameraException("Failed to encode JPEG: " + e.getMessage(), e);
         }
+    }
+
+    private static BufferedImage applyTransform(BufferedImage image, Transform transform) {
+        if (transform == Transform.IDENTITY) {
+            return image;
+        }
+
+        int width = image.getWidth();
+        int height = image.getHeight();
+
+        // For 90/270 degree rotations, swap dimensions
+        boolean transpose = transform.transpose();
+        int newWidth = transpose ? height : width;
+        int newHeight = transpose ? width : height;
+
+        BufferedImage result = new BufferedImage(newWidth, newHeight, image.getType());
+        Graphics2D g2d = result.createGraphics();
+
+        AffineTransform at = new AffineTransform();
+
+        // Move to center, apply transform, move back
+        at.translate(newWidth / 2.0, newHeight / 2.0);
+
+        if (transpose) {
+            // 90 degree rotation
+            at.rotate(Math.PI / 2);
+        }
+        if (transform.hflip()) {
+            at.scale(-1, 1);
+        }
+        if (transform.vflip()) {
+            at.scale(1, -1);
+        }
+
+        at.translate(-width / 2.0, -height / 2.0);
+
+        g2d.drawImage(image, at, null);
+        g2d.dispose();
+
+        return result;
     }
 
 }

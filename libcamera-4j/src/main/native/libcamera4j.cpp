@@ -623,6 +623,61 @@ JNIEXPORT jint JNICALL Java_in_virit_libcamera4j_Request_nativeStatus(
     return static_cast<jint>(it->second->status());
 }
 
+JNIEXPORT void JNICALL Java_in_virit_libcamera4j_Request_nativeSetAfMode(
+    JNIEnv* env, jobject obj, jlong handle, jint mode)
+{
+    std::lock_guard<std::recursive_mutex> lock(g_mutex);
+    auto it = g_requests.find(handle);
+    if (it == g_requests.end()) {
+        return;
+    }
+    it->second->controls().set(controls::AfMode, mode);
+}
+
+JNIEXPORT void JNICALL Java_in_virit_libcamera4j_Request_nativeSetLensPosition(
+    JNIEnv* env, jobject obj, jlong handle, jfloat position)
+{
+    std::lock_guard<std::recursive_mutex> lock(g_mutex);
+    auto it = g_requests.find(handle);
+    if (it == g_requests.end()) {
+        return;
+    }
+    it->second->controls().set(controls::LensPosition, position);
+}
+
+JNIEXPORT void JNICALL Java_in_virit_libcamera4j_Request_nativeSetAeEnable(
+    JNIEnv* env, jobject obj, jlong handle, jboolean enable)
+{
+    std::lock_guard<std::recursive_mutex> lock(g_mutex);
+    auto it = g_requests.find(handle);
+    if (it == g_requests.end()) {
+        return;
+    }
+    it->second->controls().set(controls::AeEnable, enable == JNI_TRUE);
+}
+
+JNIEXPORT void JNICALL Java_in_virit_libcamera4j_Request_nativeSetExposureTime(
+    JNIEnv* env, jobject obj, jlong handle, jint microseconds)
+{
+    std::lock_guard<std::recursive_mutex> lock(g_mutex);
+    auto it = g_requests.find(handle);
+    if (it == g_requests.end()) {
+        return;
+    }
+    it->second->controls().set(controls::ExposureTime, microseconds);
+}
+
+JNIEXPORT void JNICALL Java_in_virit_libcamera4j_Request_nativeSetAnalogueGain(
+    JNIEnv* env, jobject obj, jlong handle, jfloat gain)
+{
+    std::lock_guard<std::recursive_mutex> lock(g_mutex);
+    auto it = g_requests.find(handle);
+    if (it == g_requests.end()) {
+        return;
+    }
+    it->second->controls().set(controls::AnalogueGain, gain);
+}
+
 // -----------------------------------------------------------------------------
 // Buffer access for captured frames
 // -----------------------------------------------------------------------------
