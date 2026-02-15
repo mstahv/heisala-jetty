@@ -1,26 +1,24 @@
 package in.virit;
 
+import com.vaadin.flow.component.UI;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
-import com.vaadin.flow.component.datetimepicker.DateTimePicker;
-import com.vaadin.flow.component.html.Anchor;
-import com.vaadin.flow.component.html.H1;
-import com.vaadin.flow.component.html.H2;
-import com.vaadin.flow.component.html.Paragraph;
-import com.vaadin.flow.component.html.Pre;
-import com.vaadin.flow.component.html.Span;
+import com.vaadin.flow.component.html.*;
 import com.vaadin.flow.component.icon.VaadinIcon;
 import com.vaadin.flow.component.notification.Notification;
 import com.vaadin.flow.component.orderedlayout.HorizontalLayout;
 import com.vaadin.flow.component.orderedlayout.VerticalLayout;
-import com.vaadin.flow.component.select.Select;
 import com.vaadin.flow.router.Menu;
 import com.vaadin.flow.router.Route;
 import jakarta.inject.Inject;
+import org.vaadin.firitin.form.BeanValidationForm;
+import in.virit.TimelapseSettings.*;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.LocalDate;
 import java.time.LocalDateTime;
+import java.time.LocalTime;
 import java.util.Locale;
 
 @Route(value = "timelapse", layout = TopLayout.class)
@@ -68,50 +66,10 @@ public class TimelapseView extends VerticalLayout {
         """;
 
     private final TimelapseService timelapseService;
-
-    private final DateTimePicker fromPicker = new DateTimePicker("From");
-    private final DateTimePicker toPicker = new DateTimePicker("To");
-    private final Select<Integer> fpsSelect = new Select<>();
-    private final Select<SamplingInterval> samplingSelect = new Select<>();
-    private final Select<VideoResolution> resolutionSelect = new Select<>();
-    private final Select<VideoQuality> qualitySelect = new Select<>();
+    private final TimelapseSettingsForm form;
     private final Button generateButton = new Button("Generate Timelapse");
     private final Button cancelButton = new Button("Cancel");
     private final Span statusLabel = new Span();
-
-    /** Sampling interval options (how often to pick images) */
-    public record SamplingInterval(String label, int seconds) {
-        @Override public String toString() { return label; }
-    }
-    private static final SamplingInterval[] SAMPLING_INTERVALS = {
-        new SamplingInterval("All images", 0),
-        new SamplingInterval("1 per minute", 60),
-        new SamplingInterval("1 per 5 min", 300),
-        new SamplingInterval("1 per 15 min", 900),
-        new SamplingInterval("1 per hour", 3600)
-    };
-
-    /** Video resolution options */
-    public record VideoResolution(String label, String scale) {
-        @Override public String toString() { return label; }
-    }
-    private static final VideoResolution[] RESOLUTIONS = {
-        new VideoResolution("Original", null),
-        new VideoResolution("1080p", "1920:1080"),
-        new VideoResolution("720p", "1280:720"),
-        new VideoResolution("480p", "854:480")
-    };
-
-    /** Video quality/bitrate options */
-    public record VideoQuality(String label, String bitrate, int bitrateKbps) {
-        @Override public String toString() { return label; }
-    }
-    private static final VideoQuality[] QUALITIES = {
-        new VideoQuality("Low (2 Mbps)", "2M", 2000),
-        new VideoQuality("Medium (5 Mbps)", "5M", 5000),
-        new VideoQuality("High (8 Mbps)", "8M", 8000),
-        new VideoQuality("Very High (12 Mbps)", "12M", 12000)
-    };
     private final Pre ffmpegOutput = new Pre();
     private final SystemMonitor systemMonitor = new SystemMonitor();
     private final VerticalLayout downloadArea = new VerticalLayout();
@@ -122,6 +80,12 @@ public class TimelapseView extends VerticalLayout {
     @Inject
     public TimelapseView(TimelapseService timelapseService) {
         this.timelapseService = timelapseService;
+
+        // Create the form with TimelapseSettings DTO
+        form = new TimelapseSettingsForm();
+        
+        // Hide the form's default save button immediately
+        form.getSaveButton().setVisible(false);
 
         HorizontalLayout header = new HorizontalLayout();
         header.setAlignItems(Alignment.CENTER);
@@ -142,42 +106,22 @@ public class TimelapseView extends VerticalLayout {
                 range[1].format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))
             )));
 
-            // Time range pickers
-            fromPicker.setLocale(Locale.UK);
-            fromPicker.setValue(range[0]);
-            fromPicker.setMin(range[0]);
-            fromPicker.setMax(range[1]);
+            // Configure form fields
+            configureFormFields(range);
 
-            toPicker.setLocale(Locale.UK);
-            toPicker.setValue(range[1]);
-            toPicker.setMin(range[0]);
-            toPicker.setMax(range[1]);
-
-            // FPS selector
-            fpsSelect.setLabel("Frames per second");
-            fpsSelect.setItems(5, 10, 15, 24, 30);
-            fpsSelect.setValue(15);
-            fpsSelect.setItemLabelGenerator(fps -> fps + " fps");
-
-            // Sampling selector (how often to pick images)
-            samplingSelect.setLabel("Use images");
-            samplingSelect.setItems(SAMPLING_INTERVALS);
-            samplingSelect.setValue(SAMPLING_INTERVALS[0]); // All images
-
-            // Resolution selector
-            resolutionSelect.setLabel("Resolution");
-            resolutionSelect.setItems(RESOLUTIONS);
-            resolutionSelect.setValue(RESOLUTIONS[0]); // Original
-
-            // Quality selector
-            qualitySelect.setLabel("Quality");
-            qualitySelect.setItems(QUALITIES);
-            qualitySelect.setValue(QUALITIES[2]); // High (8 Mbps)
+            // Use our custom generate button (form's save button already hidden)
 
             // Generate button
             generateButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
-            generateButton.addClickListener(e -> generateTimelapse());
+            generateButton.setText("Generate Timelapse");  // Changed from "Save" to "Generate"
             generateButton.setEnabled(timelapseService.isFfmpegAvailable());
+            generateButton.addClickListener(e -> {
+                if (form.isValid()) {
+                    generateTimelapse(form.getSettings());
+                } else {
+                    Notification.show("Please fix validation errors before generating", 3000, Notification.Position.MIDDLE);
+                }
+            });
 
             // Cancel button
             cancelButton.addThemeVariants(ButtonVariant.LUMO_ERROR);
@@ -210,10 +154,7 @@ public class TimelapseView extends VerticalLayout {
             outputArea.setMaxWidth("850px");
 
             // Layout
-            HorizontalLayout timeRange = new HorizontalLayout(fromPicker, toPicker);
-            timeRange.setAlignItems(Alignment.END);
-
-            HorizontalLayout controls = new HorizontalLayout(fpsSelect, samplingSelect, resolutionSelect, qualitySelect, generateButton, cancelButton);
+            HorizontalLayout controls = new HorizontalLayout(generateButton, cancelButton);
             controls.setAlignItems(Alignment.END);
             controls.getStyle().setFlexWrap(com.vaadin.flow.dom.Style.FlexWrap.WRAP);
 
@@ -226,23 +167,58 @@ public class TimelapseView extends VerticalLayout {
             existingVideosArea.setWidth("100%");
             existingVideosArea.setMaxWidth("600px");
 
-            add(timeRange, controls, statusLabel, downloadArea, outputArea);
+            add(form, controls, statusLabel, downloadArea, outputArea);
             add(new H2("Generated Videos"));
             add(existingVideosArea);
 
-            // Update estimates when settings change
-            fromPicker.addValueChangeListener(e -> updateImageCount());
-            toPicker.addValueChangeListener(e -> updateImageCount());
-            fpsSelect.addValueChangeListener(e -> updateImageCount());
-            samplingSelect.addValueChangeListener(e -> updateImageCount());
-            qualitySelect.addValueChangeListener(e -> updateImageCount());
-            updateImageCount();
             refreshExistingVideos();
         }
 
         setSizeFull();
         setAlignItems(Alignment.CENTER);
     }
+
+    private void configureFormFields(LocalDateTime[] range) {
+        // Set default values for the current day
+        LocalDate today = LocalDate.now();
+        LocalDateTime startOfDay = today.atStartOfDay();
+        LocalDateTime endOfDay = today.atTime(LocalTime.of(23, 59, 59));
+        
+        // Ensure the default values are within the available range
+        LocalDateTime defaultFrom = startOfDay.isBefore(range[0]) ? range[0] : startOfDay;
+        LocalDateTime defaultTo = endOfDay.isAfter(range[1]) ? range[1] : endOfDay;
+        
+        // If the default range is invalid (from > to), use the full available range
+        if (defaultFrom.isAfter(defaultTo)) {
+            defaultFrom = range[0];
+            defaultTo = range[1];
+        }
+
+        // Configure the form - field names now match DTO property names for automatic binding
+        form.setDateRange(range[0], range[1], defaultFrom, defaultTo);
+        
+        // Create a default settings object and set it to the binder
+        TimelapseSettings defaultSettings = new TimelapseSettings();
+        defaultSettings.setFrom(defaultFrom);
+        defaultSettings.setTo(defaultTo);
+        defaultSettings.setFps(15);
+        defaultSettings.setSamplingInterval(TimelapseSettings.SAMPLING_INTERVALS[0]);
+        defaultSettings.setResolution(TimelapseSettings.RESOLUTIONS[0]);
+        defaultSettings.setQuality(TimelapseSettings.QUALITIES[2]);
+
+        form.setEntity(defaultSettings);
+        
+        // Add value change listener to the binder - this will automatically detect all field changes
+        form.getBinder().addValueChangeListener(e -> updateImageCount());
+
+        form.getBinder().addValueChangeListener(e -> {
+            System.out.println("Value change event" + e);
+        });
+        // Show initial estimates with default values
+        updateImageCount();
+    }
+    
+
 
     private void refreshExistingVideos() {
         existingVideosArea.removeAll();
@@ -290,31 +266,40 @@ public class TimelapseView extends VerticalLayout {
     }
 
     private void updateImageCount() {
-        LocalDateTime from = fromPicker.getValue();
-        LocalDateTime to = toPicker.getValue();
-        Integer fps = fpsSelect.getValue();
-        VideoQuality quality = qualitySelect.getValue();
-        SamplingInterval sampling = samplingSelect.getValue();
-        if (from != null && to != null && fps != null) {
-            var allImages = timelapseService.listImages(from, to);
+        TimelapseSettings settings = form.getSettings();
+        if (settings != null && settings.getFrom() != null && settings.getTo() != null) {
+            var allImages = timelapseService.listImages(settings.getFrom(), settings.getTo());
             int totalCount = allImages.size();
-            var sampledImages = sampleImages(allImages, sampling);
+            var sampledImages = sampleImages(allImages, settings.getSamplingInterval());
             int usedCount = sampledImages.size();
+            Integer fps = settings.getFps();
+            TimelapseSettings.VideoQuality quality = settings.getQuality();
 
-            double durationSec = (double) usedCount / fps;
-            // Estimate file size based on bitrate: bitrate (kbps) / 8 = KB/s
-            int bitrateKbps = quality != null ? quality.bitrateKbps() : 8000;
-            double fileSizeKB = durationSec * bitrateKbps / 8 * 0.4;
-            double fileSizeMB = fileSizeKB / 1024;
+            if (fps != null && usedCount > 0) {
+                double durationSec = (double) usedCount / fps;
+                
+                // Calculate natural duration (actual time period covered)
+                long naturalDurationSec = java.time.Duration.between(settings.getFrom(), settings.getTo()).getSeconds();
+                double speedRatio = naturalDurationSec / durationSec;
+                
+                // Estimate file size based on bitrate: bitrate (kbps) / 8 = KB/s
+                int bitrateKbps = quality != null ? quality.bitrateKbps() : 8000;
+                double fileSizeKB = durationSec * bitrateKbps / 8 * 0.4;
+                double fileSizeMB = fileSizeKB / 1024;
 
-            String duration = formatDuration(durationSec);
-            String fileSize = fileSizeMB < 1 ? String.format("%.0f KB", fileSizeKB)
-                                             : String.format("%.1f MB", fileSizeMB);
+                String duration = formatDuration(durationSec);
+                String fileSize = fileSizeMB < 1 ? String.format("%.0f KB", fileSizeKB)
+                                                 : String.format("%.1f MB", fileSizeMB);
+                String naturalDuration = formatDuration(naturalDurationSec);
+                String speedComparison = String.format("%.0fx faster than real time", speedRatio);
 
-            if (usedCount < totalCount) {
-                statusLabel.setText(String.format("%d of %d images → %s video (~%s)", usedCount, totalCount, duration, fileSize));
-            } else {
-                statusLabel.setText(String.format("%d images → %s video (~%s)", usedCount, duration, fileSize));
+                if (usedCount < totalCount) {
+                    statusLabel.setText(String.format("%d of %d images → %s video (~%s, %s, covering %s)", 
+                        usedCount, totalCount, duration, fileSize, speedComparison, naturalDuration));
+                } else {
+                    statusLabel.setText(String.format("%d images → %s video (~%s, %s, covering %s)", 
+                        usedCount, duration, fileSize, speedComparison, naturalDuration));
+                }
             }
         }
     }
@@ -323,7 +308,7 @@ public class TimelapseView extends VerticalLayout {
      * Samples images based on the selected interval.
      */
     private java.util.List<TimelapseService.TimelapseImage> sampleImages(
-            java.util.List<TimelapseService.TimelapseImage> images, SamplingInterval sampling) {
+            java.util.List<TimelapseService.TimelapseImage> images, TimelapseSettings.SamplingInterval sampling) {
         if (sampling == null || sampling.seconds() == 0 || images.isEmpty()) {
             return images;
         }
@@ -373,10 +358,15 @@ public class TimelapseView extends VerticalLayout {
         }
     }
 
-    private void generateTimelapse() {
-        LocalDateTime from = fromPicker.getValue();
-        LocalDateTime to = toPicker.getValue();
-        Integer fps = fpsSelect.getValue();
+    private void generateTimelapse(TimelapseSettings settings) {
+        if (settings == null) {
+            Notification.show("Invalid settings", 3000, Notification.Position.MIDDLE);
+            return;
+        }
+
+        LocalDateTime from = settings.getFrom();
+        LocalDateTime to = settings.getTo();
+        Integer fps = settings.getFps();
 
         if (from == null || to == null || fps == null) {
             Notification.show("Please select time range and FPS", 3000, Notification.Position.MIDDLE);
@@ -394,9 +384,9 @@ public class TimelapseView extends VerticalLayout {
             return;
         }
 
-        VideoResolution resolution = resolutionSelect.getValue();
-        VideoQuality quality = qualitySelect.getValue();
-        SamplingInterval sampling = samplingSelect.getValue();
+        TimelapseSettings.VideoResolution resolution = settings.getResolution();
+        TimelapseSettings.VideoQuality quality = settings.getQuality();
+        TimelapseSettings.SamplingInterval sampling = settings.getSamplingInterval();
         String scale = resolution != null ? resolution.scale() : null;
         String bitrate = quality != null ? quality.bitrate() : "8M";
         int bitrateKbps = quality != null ? quality.bitrateKbps() : 8000;
@@ -436,7 +426,7 @@ public class TimelapseView extends VerticalLayout {
                     });
 
                     ui.access(() -> {
-                                                generateButton.setEnabled(true);
+                        generateButton.setEnabled(true);
                         cancelButton.setVisible(false);
                         systemMonitor.setMonitoredFile(null);
 
@@ -474,7 +464,7 @@ public class TimelapseView extends VerticalLayout {
                     });
                 } catch (Exception e) {
                     ui.access(() -> {
-                                                generateButton.setEnabled(true);
+                        generateButton.setEnabled(true);
                         cancelButton.setVisible(false);
                         systemMonitor.setMonitoredFile(null);
                         statusLabel.setText("Error: " + e.getMessage());
