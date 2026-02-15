@@ -13,7 +13,9 @@ import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.Comparator;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.function.Consumer;
 import java.util.stream.Stream;
 
@@ -455,12 +457,26 @@ public class TimelapseService {
      * @param keepEveryNth keep every nth image, delete the rest
      * @return number of images deleted
      */
-    public int thinOutImages(LocalDateTime from, LocalDateTime to, int keepEveryNth) {
+    /**
+     * Thins out images in a time range, keeping every nth image.
+     *
+     * @param from start time
+     * @param to end time
+     * @param keepEveryNth keep every nth image, delete the rest
+     * @param usedImages set of images used in generated videos (will not be deleted)
+     * @return number of images deleted
+     */
+    public int thinOutImages(LocalDateTime from, LocalDateTime to, int keepEveryNth, Set<Path> usedImages) {
         List<TimelapseImage> images = listImages(from, to);
         int deleted = 0;
         int index = 0;
 
         for (TimelapseImage img : images) {
+            // Skip images used in generated videos
+            if (usedImages.contains(img.path())) {
+                continue;
+            }
+            
             if (index % keepEveryNth != 0) {
                 try {
                     Files.delete(img.path());
@@ -473,84 +489,77 @@ public class TimelapseService {
         }
 
         if (deleted > 0) {
-            LOG.info("Thinned out " + deleted + " timelapse images from " + from + " to " + to);
+            LOG.info("Thinned out " + deleted + " images from " + from + " to " + to);
         }
         return deleted;
     }
 
-    /**
-     * Hourly cleanup: thin out images from 1-24 hours ago, keeping every 4th (~1 per minute).
-     *
-     * At 15s capture rate: 240 images/hour → keeps ~60/hour for recent 24h
-     */
-    @Scheduled(cron = "0 5 * * * ?")
-    void hourlyCleanup() {
-        LocalDateTime now = LocalDateTime.now();
-        LocalDateTime from = now.minusHours(24);
-        LocalDateTime to = now.minusHours(1);
+    // Overloaded version for backward compatibility
+    public int thinOutImages(LocalDateTime from, LocalDateTime to, int keepEveryNth) {
+        return thinOutImages(from, to, keepEveryNth, new HashSet<>());
+    }
 
+    /**
+     * Nightly cleanup: ensure maximum 1 image per minute for photos 48-96 hours old.
+     * Protects all images less than 48 hours old.
+     */
+    @Scheduled(cron = "0 0 3 * * ?")
+    void nightlyCleanup48to96Hours() {
+        LocalDateTime now = LocalDateTime.now();
+        LocalDateTime from = now.minusHours(96);
+        LocalDateTime to = now.minusHours(48); // Protect images less than 48 hours old
+
+        // Target: 1 image per minute = keep every 4th image (since we capture 4 images/minute)
         int deleted = thinOutImages(from, to, 4);
         if (deleted > 0) {
-            LOG.info("Hourly cleanup: removed " + deleted + " images (1-24h old, keeping every 4th)");
+            LOG.info("Nightly cleanup (48-96h): removed " + deleted + " images, keeping max 1 per minute");
         }
     }
 
     /**
-     * Daily cleanup: thin out images from 1-7 days ago, keeping every 15th (~1 per 4 minutes).
-     *
-     * This preserves enough detail for daily timelapses while reducing storage.
+     * Nightly cleanup: ensure maximum 1 image per 5 minutes for photos older than 1 week.
+     * This runs after the 48-96 hour cleanup.
      */
     @Scheduled(cron = "0 15 3 * * ?")
-    void dailyCleanup() {
+    void nightlyCleanupOlderThanWeek() {
         LocalDateTime now = LocalDateTime.now();
-        LocalDateTime from = now.minusDays(7);
-        LocalDateTime to = now.minusDays(1);
+        LocalDateTime from = now.minusYears(1); // Go back 1 year for comprehensive cleanup
+        LocalDateTime to = now.minusDays(7); // Protect images less than 1 week old
 
-        int thinned = thinOutImages(from, to, 15);
-        if (thinned > 0) {
-            LOG.info("Daily cleanup: thinned out " + thinned + " images (1-7 days old, keeping every 15th)");
+        // Target: 1 image per 5 minutes = keep every 20th image (since we capture 4 images/minute)
+        // 4 images/minute × 5 minutes = 20 images, so keep every 20th
+        int deleted = thinOutImages(from, to, 20);
+        if (deleted > 0) {
+            LOG.info("Nightly cleanup (>1 week): removed " + deleted + " images, keeping max 1 per 5 minutes");
         }
     }
 
     /**
-     * Weekly cleanup: thin out images from 7-30 days ago, keeping every 60th (~1 per 15 minutes).
-     *
-     * Good for weekly/monthly timelapses.
+     * Monthly cleanup: delete images older than 2 years to prevent unlimited growth.
      */
-    @Scheduled(cron = "0 30 3 ? * SUN")
-    void weeklyCleanup() {
-        LocalDateTime now = LocalDateTime.now();
-        LocalDateTime from = now.minusDays(30);
-        LocalDateTime to = now.minusDays(7);
-
-        int thinned = thinOutImages(from, to, 60);
-        if (thinned > 0) {
-            LOG.info("Weekly cleanup: thinned out " + thinned + " images (7-30 days old, keeping every 60th)");
-        }
-    }
-
-    /**
-     * Monthly cleanup: thin out images from 30-365 days ago, keeping every 240th (~1 per hour).
-     * Also deletes images older than 2 years.
-     *
-     * Preserves enough for yearly timelapses: ~8,760 images/year at 1/hour = ~3GB/year
-     */
-    @Scheduled(cron = "0 45 3 1 * ?")
-    void monthlyCleanup() {
-        LocalDateTime now = LocalDateTime.now();
-
+    @Scheduled(cron = "0 30 3 1 * ?")
+    void monthlyCleanupOldImages() {
         // Delete images older than 2 years
         int deleted = cleanupOldImages(730);
         if (deleted > 0) {
             LOG.info("Monthly cleanup: deleted " + deleted + " images older than 2 years");
         }
+    }
 
-        // Thin out images from 30-365 days ago, keeping every 240th (1 per hour)
-        LocalDateTime from = now.minusDays(365);
-        LocalDateTime to = now.minusDays(30);
-        int thinned = thinOutImages(from, to, 240);
-        if (thinned > 0) {
-            LOG.info("Monthly cleanup: thinned out " + thinned + " images (30-365 days old, keeping every 240th)");
-        }
+    /**
+     * Gets all images that are used in generated timelapse videos.
+     * 
+     * @param videos list of generated videos
+     * @return set of image paths used in videos
+     */
+    private Set<Path> getImagesUsedInVideos(List<GeneratedVideo> videos) {
+        Set<Path> usedImages = new HashSet<>();
+        
+        // Note: This would require parsing video generation logs or maintaining a separate
+        // database of which images are used in which videos. For now, we return an empty set
+        // as a placeholder for future implementation.
+        
+        LOG.warn("getImagesUsedInVideos() not yet implemented - all images may be deleted");
+        return usedImages;
     }
 }

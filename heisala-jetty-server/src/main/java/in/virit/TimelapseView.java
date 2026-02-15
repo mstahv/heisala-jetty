@@ -13,6 +13,7 @@ import com.vaadin.flow.router.Route;
 import jakarta.inject.Inject;
 import org.vaadin.firitin.form.BeanValidationForm;
 import in.virit.TimelapseSettings.*;
+import org.vaadin.firitin.rad.PrettyPrinter;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -34,29 +35,28 @@ public class TimelapseView extends VerticalLayout {
 
         | Image Age | Resolution Kept | Images | Storage | Use Case |
         |-----------|-----------------|--------|---------|----------|
-        | 0-1 hour | Every 15 sec (all) | ~240 | ~80 MB | Real-time monitoring |
-        | 1-24 hours | ~1 per minute | ~1,400 | ~460 MB | Hourly timelapses |
-        | 1-7 days | ~1 per 4 min | ~2,200 | ~700 MB | Daily timelapses |
-        | 7-30 days | ~1 per 15 min | ~2,200 | ~750 MB | Weekly timelapses |
-        | 30-365 days | ~1 per hour | ~8,000 | ~2.7 GB | Monthly/yearly timelapses |
+        | 0-48 hours | Every 15 sec (all) | ~11,520 | ~3.4 GB | Real-time monitoring |
+        | 48-96 hours | ~1 per minute | ~2,880 | ~0.9 GB | Short-term timelapses |
+        | >1 week | ~1 per 5 minutes | ~105,120 | ~32 GB | Long-term timelapses |
         | >2 years | Deleted | - | - | - |
 
-        **Total estimated storage: ~5 GB** (based on ~340 KB per image)
+        **Total estimated storage: ~36 GB per year** (based on ~300 KB per image)
 
         ### Cleanup Schedule
 
-        - **Hourly** (at :05): Thins out images 1-24 hours old
-        - **Daily** (3:15 AM): Thins out images 1-7 days old
-        - **Weekly** (Sunday 3:30 AM): Thins out images 7-30 days old
-        - **Monthly** (1st, 3:45 AM): Thins out images 30-365 days old, deletes >2 years
+        - **Nightly** (3:00 AM): Ensures max 1 image per minute for 48-96 hour old photos
+        - **Nightly** (3:15 AM): Ensures max 1 image per 5 minutes for photos older than 1 week
+        - **Monthly** (1st, 3:30 AM): Deletes images older than 2 years
 
         ### Yearly Timelapse
 
-        With ~1 image per hour for the past year, you get:
-        - ~8,760 images per year
-        - ~5 min video at 30 fps
-        - ~10 min video at 15 fps
-        - ~3 GB storage per year
+        With the new storage strategy:
+        - ~105,120 images per year (1 image every 5 minutes)
+        - ~60 min video at 30 fps
+        - ~120 min video at 15 fps
+        - ~32 GB storage per year
+        
+        This provides much higher detail for yearly timelapses while still being manageable.
 
         ### Tips
 
@@ -197,7 +197,7 @@ public class TimelapseView extends VerticalLayout {
         // Configure the form - field names now match DTO property names for automatic binding
         form.setDateRange(range[0], range[1], defaultFrom, defaultTo);
         
-        // Create a default settings object and set it to the binder
+        // Create and fully configure the default settings DTO first
         TimelapseSettings defaultSettings = new TimelapseSettings();
         defaultSettings.setFrom(defaultFrom);
         defaultSettings.setTo(defaultTo);
@@ -206,13 +206,18 @@ public class TimelapseView extends VerticalLayout {
         defaultSettings.setResolution(TimelapseSettings.RESOLUTIONS[0]);
         defaultSettings.setQuality(TimelapseSettings.QUALITIES[2]);
 
+        // Configure the form with date range constraints
+        form.setDateRange(range[0], range[1], defaultFrom, defaultTo);
+        
+        // Set the fully configured entity to the form
         form.setEntity(defaultSettings);
         
         // Add value change listener to the binder - this will automatically detect all field changes
         form.getBinder().addValueChangeListener(e -> updateImageCount());
 
         form.getBinder().addValueChangeListener(e -> {
-            System.out.println("Value change event" + e);
+            System.out.println("Value change event: " +
+            PrettyPrinter.printOneLiner(e.getValue(), 300));
         });
         // Show initial estimates with default values
         updateImageCount();
