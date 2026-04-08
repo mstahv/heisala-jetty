@@ -7,6 +7,7 @@ import com.vaadin.flow.component.combobox.ComboBox;
 import com.vaadin.flow.component.details.Details;
 import com.vaadin.flow.component.dialog.Dialog;
 import com.vaadin.flow.component.formlayout.FormLayout;
+import com.vaadin.flow.component.html.DescriptionList;
 import com.vaadin.flow.component.icon.VaadinIcon;
 import com.vaadin.flow.component.markdown.Markdown;
 import com.vaadin.flow.component.grid.Grid;
@@ -70,20 +71,15 @@ public class CameraView extends VerticalLayout {
         progressBar.setWidth("300px");
         add(progressBar);
 
-        HorizontalLayout contentLayout = new HorizontalLayout();
-        contentLayout.setWidthFull();
-        contentLayout.setAlignItems(Alignment.START);
-
         capturedImage = new Image();
-        capturedImage.setMaxWidth("60%");
+        capturedImage.setMaxWidth("100%");
         capturedImage.setMaxHeight("70vh");
         capturedImage.setVisible(false);
 
         metadataGrid = new MetadataGrid();
         metadataGrid.setVisible(false);
 
-        contentLayout.add(capturedImage, metadataGrid);
-        add(contentLayout);
+        add(capturedImage, metadataGrid);
 
         setSizeFull();
         setAlignItems(Alignment.CENTER);
@@ -377,21 +373,13 @@ public class CameraView extends VerticalLayout {
      */
     public record MetadataEntry(String property, String value) {}
 
-    private class MetadataGrid extends VerticalLayout {
-        private final Grid<MetadataEntry> grid = new Grid<>(MetadataEntry.class, false);
-
+    private class MetadataGrid extends DescriptionList {
         MetadataGrid() {
-            add(new H3("Image Metadata"));
-            grid.addColumn(MetadataEntry::property).setHeader("Property").setFlexGrow(1);
-            grid.addColumn(MetadataEntry::value).setHeader("Value").setFlexGrow(2);
-            grid.setAllRowsVisible(true);
-            grid.setWidth("350px");
-            add(grid);
-            setPadding(false);
-            setSpacing(false);
+            setWidth("350px");
         }
 
         void setMetadata(ImageMetadata metadata) {
+            removeAll();
             List<MetadataEntry> entries = new ArrayList<>();
             entries.add(new MetadataEntry("Resolution", metadata.width() + " × " + metadata.height()));
             entries.add(new MetadataEntry("Pixel Format", metadata.pixelFormat()));
@@ -409,7 +397,10 @@ public class CameraView extends VerticalLayout {
                 entries.add(new MetadataEntry("Lux", String.format("%.1f", metadata.lux())));
             }
             entries.add(new MetadataEntry("Sequence", String.valueOf(metadata.sequence())));
-            grid.setItems(entries);
+            entries.forEach(md -> {
+                add(new Term(md.property()));
+                add(new Description(md.value()));
+            });
         }
     }
 

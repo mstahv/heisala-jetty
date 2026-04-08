@@ -92,6 +92,43 @@ Or, if you don't have GraalVM installed, you can run the native executable build
 ./mvnw package -Dnative -Dquarkus.native.container-build=true
 ```
 
+### Building for Raspberry Pi Zero 2W
+
+**Recommended Approach: Docker-based Cross-Compilation (Pi4J-style)**
+
+Use our dedicated build script that handles cross-compilation similar to the Pi4J project:
+
+```shell script
+./build-rpi-native.sh
+```
+
+This script:
+- Uses the official Quarkus Mandrel Docker image
+- Configures proper ARMv8 Cortex-A53 cross-compilation
+- Applies Raspberry Pi Zero 2W specific optimizations
+- Produces a static musl-linked binary for maximum compatibility
+
+**Alternative Approaches:**
+
+1. **Direct Docker build:**
+```shell script
+docker run --rm -v $(pwd):/build -w /build quay.io/quarkus/ubi-quarkus-mandrel:22.3-java17 \
+    mvn clean package -Dnative \
+    -Dquarkus.native.additional-build-args="-march=armv8-a+crc,-mtune=cortex-a53,--static,--libc=musl"
+```
+
+2. **Build directly on Raspberry Pi Zero 2W:**
+```shell script
+# On the Raspberry Pi itself
+mvn package -Dnative -Dquarkus.native.container-build=false
+```
+
+**Key Architecture Flags Used:**
+- `-march=armv8-a+crc`: ARMv8-A with CRC support (Cortex-A53 compatible)
+- `-mtune=cortex-a53`: Optimize for Raspberry Pi Zero 2W's CPU
+- `--static --libc=musl`: Static linking for maximum compatibility
+- `-H:TargetPlatform=linux-aarch64`: Target ARM64 Linux platform
+
 You can then execute your native executable with: `./target/heisala-jetty-server-1.0.0-SNAPSHOT-runner`
 
 If you want to learn more about building native executables, please consult <https://quarkus.io/guides/maven-tooling>.

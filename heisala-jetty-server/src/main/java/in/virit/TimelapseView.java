@@ -1,5 +1,6 @@
 package in.virit;
 
+import com.vaadin.flow.component.AttachEvent;
 import com.vaadin.flow.component.UI;
 import com.vaadin.flow.component.button.Button;
 import com.vaadin.flow.component.button.ButtonVariant;
@@ -74,108 +75,124 @@ public class TimelapseView extends VerticalLayout {
     private final SystemMonitor systemMonitor = new SystemMonitor();
     private final VerticalLayout downloadArea = new VerticalLayout();
     private final VerticalLayout existingVideosArea = new VerticalLayout();
+    private final Paragraph statsLabel = new Paragraph("Loading image statistics...");
 
     private Path generatedVideoPath;
+    private boolean formConfigured;
 
     @Inject
     public TimelapseView(TimelapseService timelapseService) {
         this.timelapseService = timelapseService;
 
-        // Create the form with TimelapseSettings DTO
         form = new TimelapseSettingsForm();
-        
-        // Hide the form's default save button immediately
         form.getSaveButton().setVisible(false);
+        form.setVisible(false);
 
         HorizontalLayout header = new HorizontalLayout();
         header.setAlignItems(Alignment.CENTER);
         header.add(new H1("Timelapse Generator"), new HelpButton(RETENTION_POLICY_HELP));
         add(header);
 
-        // Stats
-        int imageCount = timelapseService.getImageCount();
-        LocalDateTime[] range = timelapseService.getTimeRange();
+        add(statsLabel);
 
-        if (imageCount == 0) {
-            add(new Paragraph("No timelapse images available yet. Images are captured automatically every 15 seconds."));
-        } else {
-            add(new Paragraph(String.format(
-                "%d images available from %s to %s",
-                imageCount,
-                range[0].format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")),
-                range[1].format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))
-            )));
-
-            // Configure form fields
-            configureFormFields(range);
-
-            // Use our custom generate button (form's save button already hidden)
-
-            // Generate button
-            generateButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
-            generateButton.setText("Generate Timelapse");  // Changed from "Save" to "Generate"
-            generateButton.setEnabled(timelapseService.isFfmpegAvailable());
-            generateButton.addClickListener(e -> {
-                if (form.isValid()) {
-                    generateTimelapse(form.getSettings());
-                } else {
-                    Notification.show("Please fix validation errors before generating", 3000, Notification.Position.MIDDLE);
-                }
-            });
-
-            // Cancel button
-            cancelButton.addThemeVariants(ButtonVariant.LUMO_ERROR);
-            cancelButton.addClickListener(e -> cancelGeneration());
-            cancelButton.setVisible(false);
-
-            if (!timelapseService.isFfmpegAvailable()) {
-                add(new Paragraph("FFmpeg not available - video generation is disabled. Install with: sudo apt install ffmpeg"));
+        // Generate button
+        generateButton.addThemeVariants(ButtonVariant.LUMO_PRIMARY);
+        generateButton.setEnabled(false);
+        generateButton.addClickListener(e -> {
+            if (form.isValid()) {
+                generateTimelapse(form.getSettings());
+            } else {
+                Notification.show("Please fix validation errors before generating", 3000, Notification.Position.MIDDLE);
             }
+        });
 
-            statusLabel.getStyle().setColor("var(--lumo-secondary-text-color)");
+        // Cancel button
+        cancelButton.addThemeVariants(ButtonVariant.LUMO_ERROR);
+        cancelButton.addClickListener(e -> cancelGeneration());
+        cancelButton.setVisible(false);
 
-            // FFmpeg output area
-            ffmpegOutput.setVisible(false);
-            ffmpegOutput.setWidth("100%");
-            ffmpegOutput.setMaxWidth("600px");
-            ffmpegOutput.setMaxHeight("300px");
-            ffmpegOutput.getStyle()
-                .setOverflow(com.vaadin.flow.dom.Style.Overflow.AUTO)
-                .setBackground("var(--lumo-contrast-5pct)")
-                .setPadding("var(--lumo-space-s)")
-                .setFontSize("var(--lumo-font-size-xs)");
+        statusLabel.getStyle().setColor("var(--lumo-secondary-text-color)");
 
-            // System monitor (next to log)
-            systemMonitor.setVisible(false);
+        // FFmpeg output area
+        ffmpegOutput.setVisible(false);
+        ffmpegOutput.setWidth("100%");
+        ffmpegOutput.setMaxWidth("600px");
+        ffmpegOutput.setMaxHeight("300px");
+        ffmpegOutput.getStyle()
+            .setOverflow(com.vaadin.flow.dom.Style.Overflow.AUTO)
+            .setBackground("var(--lumo-contrast-5pct)")
+            .setPadding("var(--lumo-space-s)")
+            .setFontSize("var(--lumo-font-size-xs)");
 
-            HorizontalLayout outputArea = new HorizontalLayout(ffmpegOutput, systemMonitor);
-            outputArea.setAlignItems(Alignment.STRETCH);
-            outputArea.setWidthFull();
-            outputArea.setMaxWidth("850px");
+        systemMonitor.setVisible(false);
 
-            // Layout
-            HorizontalLayout controls = new HorizontalLayout(generateButton, cancelButton);
-            controls.setAlignItems(Alignment.END);
-            controls.getStyle().setFlexWrap(com.vaadin.flow.dom.Style.FlexWrap.WRAP);
+        HorizontalLayout outputArea = new HorizontalLayout(ffmpegOutput, systemMonitor);
+        outputArea.setAlignItems(Alignment.STRETCH);
+        outputArea.setWidthFull();
+        outputArea.setMaxWidth("850px");
 
-            downloadArea.setPadding(false);
-            downloadArea.setSpacing(false);
+        HorizontalLayout controls = new HorizontalLayout(generateButton, cancelButton);
+        controls.setAlignItems(Alignment.END);
+        controls.getStyle().setFlexWrap(com.vaadin.flow.dom.Style.FlexWrap.WRAP);
 
-            // Existing videos section
-            existingVideosArea.setPadding(false);
-            existingVideosArea.setSpacing(false);
-            existingVideosArea.setWidth("100%");
-            existingVideosArea.setMaxWidth("600px");
+        downloadArea.setPadding(false);
+        downloadArea.setSpacing(false);
 
-            add(form, controls, statusLabel, downloadArea, outputArea);
-            add(new H2("Generated Videos"));
-            add(existingVideosArea);
+        existingVideosArea.setPadding(false);
+        existingVideosArea.setSpacing(false);
+        existingVideosArea.setWidth("100%");
+        existingVideosArea.setMaxWidth("600px");
 
-            refreshExistingVideos();
-        }
+        add(form, controls, statusLabel, downloadArea, outputArea);
+        add(new H2("Generated Videos"));
+        add(existingVideosArea);
 
         setSizeFull();
         setAlignItems(Alignment.CENTER);
+    }
+
+    @Override
+    protected void onAttach(AttachEvent attachEvent) {
+        super.onAttach(attachEvent);
+        loadStatsAsync();
+        refreshExistingVideos();
+    }
+
+    private void loadStatsAsync() {
+        getUI().ifPresent(ui -> Thread.startVirtualThread(() -> {
+            // Wait for cache if not yet loaded
+            int retries = 0;
+            while (!timelapseService.isCacheLoaded() && retries++ < 10) {
+                try { Thread.sleep(500); } catch (InterruptedException e) { break; }
+            }
+
+            int imageCount = timelapseService.getImageCount();
+            LocalDateTime[] range = timelapseService.getTimeRange();
+
+            ui.access(() -> {
+                if (imageCount == 0) {
+                    statsLabel.setText("No timelapse images available yet. Images are captured automatically every 15 seconds.");
+                } else {
+                    statsLabel.setText(String.format(
+                        "%d images available from %s to %s",
+                        imageCount,
+                        range[0].format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm")),
+                        range[1].format(java.time.format.DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm"))
+                    ));
+
+                    if (!formConfigured) {
+                        configureFormFields(range);
+                        form.setVisible(true);
+                        generateButton.setEnabled(timelapseService.isFfmpegAvailable());
+                        if (!timelapseService.isFfmpegAvailable()) {
+                            statsLabel.setText(statsLabel.getText()
+                                + "\nFFmpeg not available - video generation is disabled. Install with: sudo apt install ffmpeg");
+                        }
+                        formConfigured = true;
+                    }
+                }
+            });
+        }));
     }
 
     private void configureFormFields(LocalDateTime[] range) {
@@ -239,19 +256,11 @@ public class TimelapseView extends VerticalLayout {
             row.setAlignItems(Alignment.CENTER);
             row.setWidthFull();
 
-            Anchor downloadLink = new Anchor();
-            downloadLink.setText(video.getFileName() + " (" + video.getFormattedSize() + ")");
-            downloadLink.getElement().setAttribute("download", true);
-            downloadLink.setHref(event -> {
-                try {
-                    event.setFileName(video.getFileName());
-                    event.setContentType(video.getFileName().endsWith(".mp4") ? "video/mp4" : "video/x-msvideo");
-                    event.setContentLength(video.sizeBytes());
-                    Files.copy(video.path(), event.getOutputStream());
-                } catch (Exception e) {
-                    throw new RuntimeException("Failed to stream video", e);
-                }
-            });
+            Anchor downloadLink = new Anchor(
+                "/api/videos/" + video.getFileName(),
+                video.getFileName() + " (" + video.getFormattedSize() + ")"
+            );
+            downloadLink.setTarget("_blank");
 
             Button deleteButton = new Button(VaadinIcon.TRASH.create(), e -> {
                 if (timelapseService.deleteVideo(video.path())) {
@@ -440,22 +449,13 @@ public class TimelapseView extends VerticalLayout {
                             statusLabel.setText("Timelapse generated successfully!");
 
                             String filename = videoPath.getFileName().toString();
-                            String contentType = filename.endsWith(".mp4") ? "video/mp4" : "video/x-msvideo";
                             String fileSize = formatFileSize(videoPath);
 
-                            Anchor downloadLink = new Anchor();
-                            downloadLink.setText("Download " + filename + " (" + fileSize + ")");
-                            downloadLink.getElement().setAttribute("download", true);
-                            downloadLink.setHref(downloadEvent -> {
-                                try {
-                                    downloadEvent.setFileName(generatedVideoPath.getFileName().toString());
-                                    downloadEvent.setContentType(contentType);
-                                    downloadEvent.setContentLength(Files.size(generatedVideoPath));
-                                    Files.copy(generatedVideoPath, downloadEvent.getOutputStream());
-                                } catch (Exception e) {
-                                    throw new RuntimeException("Failed to stream video file", e);
-                                }
-                            });
+                            Anchor downloadLink = new Anchor(
+                                "/api/videos/" + filename,
+                                "View " + filename + " (" + fileSize + ")"
+                            );
+                            downloadLink.setTarget("_blank");
                             downloadLink.getStyle()
                                 .setFontSize("var(--lumo-font-size-l)")
                                 .setMarginTop("var(--lumo-space-m)");

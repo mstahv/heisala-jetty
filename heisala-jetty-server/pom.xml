@@ -23,10 +23,12 @@
         <quarkus.platform.version>3.31.2</quarkus.platform.version>
         <skipITs>true</skipITs>
         <surefire-plugin.version>3.5.4</surefire-plugin.version>
-        <quarkus.package.jar.type>uber-jar</quarkus.package.jar.type>
+<!--        <quarkus.package.jar.type>uber-jar</quarkus.package.jar.type>-->
         <deploy.host>jetty.local</deploy.host>
         <deploy.dir>/home/mstahv</deploy.dir>
         <deploy.jar>${project.build.finalName}-runner.jar</deploy.jar>
+        <!-- Raspberry Pi Zero 2W native build configuration -->
+        <quarkus.native.build.args>-march=armv8-a+crc -mtune=cortex-a53 --static --libc=musl</quarkus.native.build.args>
     </properties>
 
     <dependencyManagement>
@@ -38,6 +40,13 @@
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
+            <dependency>
+                <groupId>com.vaadin</groupId>
+                <artifactId>vaadin-bom</artifactId>
+                <version>25.1.0-beta3</version>
+                <type>pom</type>
+                <scope>import</scope>
+            </dependency>
         </dependencies>
     </dependencyManagement>
 
@@ -45,7 +54,11 @@
         <dependency>
             <groupId>com.vaadin</groupId>
             <artifactId>vaadin-quarkus-extension</artifactId>
-            <version>25.0.4</version>
+            <version>25.1.0-beta3</version>
+        </dependency>
+        <dependency>
+            <groupId>com.vaadin</groupId>
+            <artifactId>vaadin-charts-flow</artifactId>
         </dependency>
         <dependency>
             <groupId>in.virit</groupId>
@@ -56,7 +69,7 @@
         <dependency>
             <groupId>in.virit</groupId>
             <artifactId>viritin</artifactId>
-            <version>3.1.4-SNAPSHOT</version>
+            <version>3.2.1-SNAPSHOT</version>
         </dependency>
 
         <dependency>
@@ -66,7 +79,24 @@
 
         <dependency>
             <groupId>io.quarkus</groupId>
+            <artifactId>quarkus-resteasy</artifactId>
+        </dependency>
+
+        <dependency>
+            <groupId>io.quarkus</groupId>
             <artifactId>quarkus-hibernate-validator</artifactId>
+        </dependency>
+
+        <!-- BLE GATT client for receiving water distance data from ESP32 via Bluetooth -->
+        <dependency>
+            <groupId>com.github.hypfvieh</groupId>
+            <artifactId>bluez-dbus</artifactId>
+            <version>0.3.2</version>
+        </dependency>
+        <dependency>
+            <groupId>com.github.hypfvieh</groupId>
+            <artifactId>dbus-java-transport-native-unixsocket</artifactId>
+            <version>5.1.1</version>
         </dependency>
     </dependencies>
 
@@ -99,7 +129,7 @@
                 <artifactId>maven-surefire-plugin</artifactId>
                 <version>${surefire-plugin.version}</version>
                 <configuration>
-                    <argLine>--add-opens java.base/java.lang=ALL-UNNAMED</argLine>
+                    <argLine>@{argLine} --add-opens java.base/java.lang=ALL-UNNAMED</argLine>
                     <systemPropertyVariables>
                         <java.util.logging.manager>org.jboss.logmanager.LogManager</java.util.logging.manager>
                         <maven.home>${maven.home}</maven.home>
@@ -118,7 +148,7 @@
                     </execution>
                 </executions>
                 <configuration>
-                    <argLine>--add-opens java.base/java.lang=ALL-UNNAMED</argLine>
+                    <argLine>@{argLine} --add-opens java.base/java.lang=ALL-UNNAMED</argLine>
                     <systemPropertyVariables>
                         <native.image.path>${project.build.directory}/${project.build.finalName}-runner</native.image.path>
                         <java.util.logging.manager>org.jboss.logmanager.LogManager</java.util.logging.manager>
@@ -140,73 +170,7 @@
             <properties>
                 <quarkus.package.jar.enabled>false</quarkus.package.jar.enabled>
                 <skipITs>false</skipITs>
-                <quarkus.native.enabled>true</quarkus.native.enabled>
             </properties>
-        </profile>
-        <profile>
-            <id>deploy</id>
-            <activation>
-                <activeByDefault>true</activeByDefault>
-            </activation>
-            <properties>
-                <maven.deploy.skip>true</maven.deploy.skip>
-            </properties>
-            <build>
-                <plugins>
-                    <plugin>
-                        <groupId>org.codehaus.mojo</groupId>
-                        <artifactId>wagon-maven-plugin</artifactId>
-                        <version>2.0.2</version>
-                        <executions>
-                            <execution>
-                                <id>upload-jar</id>
-                                <phase>deploy</phase>
-                                <goals>
-                                    <goal>upload-single</goal>
-                                </goals>
-                                <configuration>
-                                    <serverId>jetty</serverId>
-                                    <fromFile>${project.build.directory}/${deploy.jar}</fromFile>
-                                    <url>scpexe://${deploy.host}${deploy.dir}</url>
-                                </configuration>
-                            </execution>
-                        </executions>
-                        <dependencies>
-                            <dependency>
-                                <groupId>org.apache.maven.wagon</groupId>
-                                <artifactId>wagon-ssh-external</artifactId>
-                                <version>3.5.3</version>
-                            </dependency>
-                        </dependencies>
-                    </plugin>
-                    <plugin>
-                        <groupId>org.codehaus.mojo</groupId>
-                        <artifactId>exec-maven-plugin</artifactId>
-                        <version>3.5.0</version>
-                        <executions>
-                            <execution>
-                                <id>restart-app</id>
-                                <phase>deploy</phase>
-                                <goals>
-                                    <goal>exec</goal>
-                                </goals>
-                                <configuration>
-                                    <executable>ssh</executable>
-                                    <arguments>
-                                        <argument>${deploy.host}</argument>
-                                        <argument>source ~/.sdkman/bin/sdkman-init.sh; killall java; nohup java -jar ${deploy.dir}/${deploy.jar} > ${deploy.dir}/server.log 2>&amp;1 &amp;</argument>
-                                    </arguments>
-                                    <successCodes>
-                                        <successCode>0</successCode>
-                                        <successCode>1</successCode>
-                                        <successCode>255</successCode>
-                                    </successCodes>
-                                </configuration>
-                            </execution>
-                        </executions>
-                    </plugin>
-                </plugins>
-            </build>
         </profile>
     </profiles>
 </project>

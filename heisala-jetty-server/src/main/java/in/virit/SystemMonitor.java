@@ -24,10 +24,13 @@ public class SystemMonitor extends VerticalLayout {
 
     private final ProgressBar cpuBar = new ProgressBar(0, 1);
     private final ProgressBar memoryBar = new ProgressBar(0, 1);
+    private final ProgressBar tempBar = new ProgressBar(0, 100);
     private final ProgressBar progressBar = new ProgressBar(0, 1);
     private final Span cpuLabel = new Span();
     private final Span memoryLabel = new Span();
+    private final Span tempLabel = new Span();
     private final Span progressLabel = new Span();
+    private final Div tempSection;
     private final Div progressSection;
 
     private final ScheduledExecutorService executor = Executors.newSingleThreadScheduledExecutor();
@@ -48,6 +51,12 @@ public class SystemMonitor extends VerticalLayout {
 
         add(createSection("CPU", cpuBar, cpuLabel));
         add(createSection("Memory", memoryBar, memoryLabel));
+
+        // Temperature section (hidden if not available on this platform)
+        tempSection = createSection("Temp", tempBar, tempLabel);
+        tempSection.setVisible(getCpuTemperature() >= 0);
+        tempBar.setWidth("100%");
+        add(tempSection);
 
         // Progress section (hidden initially)
         progressSection = createSection("Progress", progressBar, progressLabel);
@@ -126,6 +135,7 @@ public class SystemMonitor extends VerticalLayout {
                 double memoryUsage = getMemoryUsage();
                 long usedMemoryMB = getUsedMemoryMB();
                 long totalMemoryMB = getTotalMemoryMB();
+                double cpuTemp = getCpuTemperature();
 
                 // File progress tracking
                 long currentFileSize = 0;
@@ -185,6 +195,17 @@ public class SystemMonitor extends VerticalLayout {
                     memoryBar.setValue(memoryUsage);
                     memoryLabel.setText(String.format("%d / %d MB", usedMemoryMB, totalMemoryMB));
 
+                    if (cpuTemp >= 0) {
+                        tempSection.setVisible(true);
+                        tempBar.setValue(cpuTemp);
+                        tempLabel.setText(String.format("%.0f\u00B0C", cpuTemp));
+                        // Color the bar based on temperature thresholds
+                        String color = cpuTemp > 80 ? "var(--lumo-error-color)"
+                            : cpuTemp > 65 ? "var(--lumo-warning-color, orange)"
+                            : "var(--lumo-primary-color)";
+                        tempBar.getStyle().set("--vaadin-progress-color", color);
+                    }
+
                     if (monitoredFile != null) {
                         progressLabel.setText(finalProgressText);
 
@@ -240,6 +261,24 @@ public class SystemMonitor extends VerticalLayout {
         }
         Runtime runtime = Runtime.getRuntime();
         return (runtime.totalMemory() - runtime.freeMemory()) / (1024 * 1024);
+    }
+
+    private static final Path THERMAL_ZONE = Path.of("/sys/class/thermal/thermal_zone0/temp");
+
+    /**
+     * Reads CPU temperature from Linux thermal zone.
+     * @return temperature in degrees Celsius, or -1 if not available
+     */
+    private double getCpuTemperature() {
+        try {
+            if (Files.exists(THERMAL_ZONE)) {
+                String raw = Files.readString(THERMAL_ZONE).trim();
+                return Long.parseLong(raw) / 1000.0;
+            }
+        } catch (Exception e) {
+            // Not available on this platform
+        }
+        return -1;
     }
 
     private long getTotalMemoryMB() {

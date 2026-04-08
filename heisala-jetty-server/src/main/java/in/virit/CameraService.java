@@ -16,6 +16,7 @@ import java.nio.file.Path;
 import java.time.LocalDateTime;
 import java.time.format.DateTimeFormatter;
 import java.util.concurrent.CompletableFuture;
+import java.util.concurrent.Semaphore;
 
 /**
  * Service for capturing photos from the camera.
@@ -55,6 +56,8 @@ public class CameraService {
 
     @Inject
     TimelapseService timelapseService;
+
+    private final Semaphore cameraSemaphore = new Semaphore(1);
 
     private CameraSettings currentSettings;
     private LocalDateTime lastCaptureTime;
@@ -169,7 +172,11 @@ public class CameraService {
         if (!cameraAvailable) {
             return CompletableFuture.failedFuture(new UnsupportedOperationException("Camera not available"));
         }
-        return CameraCapture.captureWithMetadataAsync(WIDTH, HEIGHT, settings);
+        if (!cameraSemaphore.tryAcquire()) {
+            return CompletableFuture.failedFuture(new IllegalStateException("Camera is busy with another capture, please wait and try again"));
+        }
+        return CameraCapture.captureWithMetadataAsync(WIDTH, HEIGHT, settings)
+            .whenComplete((result, ex) -> cameraSemaphore.release());
     }
 
     /**
@@ -182,7 +189,11 @@ public class CameraService {
         if (!cameraAvailable) {
             return CompletableFuture.failedFuture(new UnsupportedOperationException("Camera not available"));
         }
-        return CameraCapture.captureFullResolutionWithMetadataAsync(settings);
+        if (!cameraSemaphore.tryAcquire()) {
+            return CompletableFuture.failedFuture(new IllegalStateException("Camera is busy with another capture, please wait and try again"));
+        }
+        return CameraCapture.captureFullResolutionWithMetadataAsync(settings)
+            .whenComplete((result, ex) -> cameraSemaphore.release());
     }
 
     /**
@@ -195,7 +206,11 @@ public class CameraService {
         if (!cameraAvailable) {
             return CompletableFuture.failedFuture(new UnsupportedOperationException("Camera not available"));
         }
-        return CameraCapture.captureDngBytesAsync(settings);
+        if (!cameraSemaphore.tryAcquire()) {
+            return CompletableFuture.failedFuture(new IllegalStateException("Camera is busy with another capture, please wait and try again"));
+        }
+        return CameraCapture.captureDngBytesAsync(settings)
+            .whenComplete((result, ex) -> cameraSemaphore.release());
     }
 
     /**
@@ -275,9 +290,21 @@ public class CameraService {
             LOG.debug("Skipping periodic capture - camera not available");
             return;
         }
+        if (timelapseService.isGenerating()) {
+            LOG.debug("Skipping periodic capture - timelapse generation in progress");
+            return;
+        }
+        if (!cameraSemaphore.tryAcquire()) {
+            LOG.debug("Skipping periodic capture - camera busy with another capture");
+            return;
+        }
         LOG.info("Starting periodic capture...");
-        captureAndSaveAsync(currentSettings)
-            .thenAccept(result -> LOG.info("Periodic capture completed successfully"))
+        CameraCapture.captureWithMetadataAsync(WIDTH, HEIGHT, currentSettings)
+            .whenComplete((result, ex) -> cameraSemaphore.release())
+            .thenAccept(result -> {
+                saveLatestPhoto(result.jpeg());
+                LOG.info("Periodic capture completed successfully");
+            })
             .exceptionally(ex -> {
                 LOG.error("Periodic capture failed", ex);
                 return null;

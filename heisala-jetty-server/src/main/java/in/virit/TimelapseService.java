@@ -26,13 +26,17 @@ import java.util.stream.Stream;
 public class TimelapseService {
 
     private static final Logger LOG = Logger.getLogger(TimelapseService.class);
-    private static final Path TIMELAPSE_DIR = Path.of("timelapse");
+    public static final Path TIMELAPSE_DIR = Path.of("timelapse");
     private static final DateTimeFormatter FILE_FORMAT = DateTimeFormatter.ofPattern("yyyyMMdd_HHmmss");
     private static final DateTimeFormatter DISPLAY_FORMAT = DateTimeFormatter.ofPattern("yyyy-MM-dd HH:mm:ss");
 
     private boolean ffmpegAvailable;
     private volatile Process currentProcess;
     private volatile boolean cancelled;
+
+    // Cached image list - loaded on boot, updated programmatically
+    private volatile List<TimelapseImage> cachedImages;
+    private volatile boolean cacheLoaded;
 
     @PostConstruct
     void init() {
@@ -57,6 +61,64 @@ public class TimelapseService {
         } catch (Exception e) {
             ffmpegAvailable = false;
             LOG.warn("FFmpeg not available - timelapse video generation will be disabled: " + e.getMessage());
+        }
+
+        // Warm image cache asynchronously
+        Thread.startVirtualThread(this::refreshImageCache);
+    }
+
+    /**
+     * Refreshes the cached image list by scanning disk.
+     * Called on boot and after bulk operations (cleanup/thinning).
+     */
+    void refreshImageCache() {
+        try {
+            List<TimelapseImage> images = scanImagesFromDisk();
+            this.cachedImages = images;
+            this.cacheLoaded = true;
+            LOG.debug("Image cache refreshed: " + images.size() + " images");
+        } catch (Exception e) {
+            LOG.error("Failed to refresh image cache", e);
+        }
+    }
+
+    /**
+     * Adds a single image to the cache in sorted order, avoiding a full disk rescan.
+     */
+    private void addToCache(TimelapseImage image) {
+        List<TimelapseImage> current = this.cachedImages;
+        if (current == null) {
+            return; // cache not yet initialized
+        }
+        var updated = new java.util.ArrayList<>(current);
+        // Insert in sorted position by timestamp
+        int pos = java.util.Collections.binarySearch(updated, image, Comparator.comparing(TimelapseImage::timestamp));
+        if (pos < 0) pos = -pos - 1;
+        updated.add(pos, image);
+        this.cachedImages = List.copyOf(updated);
+    }
+
+    /**
+     * Returns whether the image cache has been loaded at least once.
+     */
+    public boolean isCacheLoaded() {
+        return cacheLoaded;
+    }
+
+    private List<TimelapseImage> scanImagesFromDisk() {
+        if (!Files.exists(TIMELAPSE_DIR)) {
+            return List.of();
+        }
+        try (Stream<Path> files = Files.walk(TIMELAPSE_DIR)) {
+            return files
+                .filter(p -> p.toString().endsWith(".jpg"))
+                .map(this::parseTimelapseImage)
+                .filter(img -> img != null)
+                .sorted(Comparator.comparing(TimelapseImage::timestamp))
+                .toList();
+        } catch (IOException e) {
+            LOG.error("Failed to scan timelapse images from disk", e);
+            return List.of();
         }
     }
 
@@ -181,6 +243,7 @@ public class TimelapseService {
         try {
             Files.write(imagePath, jpeg);
             LOG.debug("Timelapse image saved: " + imagePath);
+            addToCache(new TimelapseImage(timestamp, imagePath));
         } catch (IOException e) {
             LOG.error("Failed to save timelapse image", e);
         }
@@ -197,24 +260,19 @@ public class TimelapseService {
 
     /**
      * Lists all available timelapse images, sorted by timestamp.
+     * Returns cached data that is loaded on boot and updated when images are saved or deleted.
      *
      * @return list of timelapse images
      */
     public List<TimelapseImage> listImages() {
-        if (!Files.exists(TIMELAPSE_DIR)) {
-            return List.of();
+        List<TimelapseImage> cached = this.cachedImages;
+        if (cached != null) {
+            return cached;
         }
-        try (Stream<Path> files = Files.walk(TIMELAPSE_DIR)) {
-            return files
-                .filter(p -> p.toString().endsWith(".jpg"))
-                .map(this::parseTimelapseImage)
-                .filter(img -> img != null)
-                .sorted(Comparator.comparing(TimelapseImage::timestamp))
-                .toList();
-        } catch (IOException e) {
-            LOG.error("Failed to list timelapse images", e);
-            return List.of();
-        }
+        // Cache not yet warmed (app just started), fall back to synchronous scan
+        refreshImageCache();
+        cached = this.cachedImages;
+        return cached != null ? cached : List.of();
     }
 
     /**
@@ -333,8 +391,8 @@ public class TimelapseService {
             if (exitCode != 0) {
                 if (outputConsumer != null) outputConsumer.accept("Hardware encoder failed, trying software encoder...");
                 exitCode = tryFfmpeg(fileList, fps, scale, outputPath, outputConsumer,
-                    // Software encoder with minimal memory usage
-                    "libx264", "-preset", "ultrafast", "-b:v", bitrate, "-threads", "2"
+                    // Software encoder with minimal resource usage
+                    "libx264", "-preset", "ultrafast", "-b:v", bitrate, "-threads", "1"
                 );
             }
 
@@ -375,6 +433,8 @@ public class TimelapseService {
 
         try {
             List<String> command = new java.util.ArrayList<>();
+            // Run at lowest CPU and I/O priority to prevent overheating on small devices
+            command.addAll(List.of("nice", "-n", "19", "ionice", "-c", "3"));
             command.addAll(List.of(
                 "ffmpeg", "-y",
                 "-f", "concat",
@@ -445,6 +505,7 @@ public class TimelapseService {
 
         if (deleted > 0) {
             LOG.info("Cleaned up " + deleted + " old timelapse images");
+            refreshImageCache();
         }
         return deleted;
     }
@@ -490,6 +551,7 @@ public class TimelapseService {
 
         if (deleted > 0) {
             LOG.info("Thinned out " + deleted + " images from " + from + " to " + to);
+            refreshImageCache();
         }
         return deleted;
     }
