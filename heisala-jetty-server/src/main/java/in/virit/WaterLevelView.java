@@ -145,9 +145,25 @@ public class WaterLevelView extends VerticalLayout {
         return CALIBRATION_LEVEL_CM + (ULTRASONIC_CALIBRATION_DISTANCE_MM - distanceMm) / 10.0;
     }
 
+    // When both sensors report, use cross-validation: if calibrated levels
+    // disagree by more than this, the radar is likely glitching — use ultrasonic.
+    private static final double SENSOR_AGREEMENT_THRESHOLD_CM = 5.0;
+
+    // Hysteresis: once radar disagrees with ultrasonic, require this many
+    // consecutive agreements before trusting radar again. Prevents flickering
+    // between sensors during intermittent radar noise.
+    private static final int RADAR_TRUST_COOLDOWN = 30; // ~5 minutes at 10s intervals
+
     static double bestWaterLevelCm(WaterDistanceService.Measurement m) {
-        // Radar is primary — less noise. Ultrasonic only as fallback.
-        if (m.hasRadar()) {
+        if (m.hasRadar() && m.hasUltrasonic()) {
+            double radarLevel = radarToWaterLevelCm(m.radarMm());
+            double ultrasonicLevel = ultrasonicToWaterLevelCm(m.ultrasonicMm());
+            if (Math.abs(radarLevel - ultrasonicLevel) > SENSOR_AGREEMENT_THRESHOLD_CM) {
+                // Sensors disagree — radar is likely in a bad spell, trust ultrasonic
+                return ultrasonicLevel;
+            }
+            return radarLevel;
+        } else if (m.hasRadar()) {
             return radarToWaterLevelCm(m.radarMm());
         } else if (m.hasUltrasonic()) {
             return ultrasonicToWaterLevelCm(m.ultrasonicMm());
@@ -155,17 +171,53 @@ public class WaterLevelView extends VerticalLayout {
         return Double.NaN;
     }
 
+    /**
+     * Computes best water levels for a sequence of measurements with hysteresis.
+     * Once radar disagrees with ultrasonic, it must produce RADAR_TRUST_COOLDOWN
+     * consecutive agreements before being trusted again. This prevents rapid
+     * flickering between sensors when radar has intermittent noise.
+     */
+    static double[] bestWaterLevels(List<WaterDistanceService.Measurement> data) {
+        double[] levels = new double[data.size()];
+        boolean radarTrusted = true;
+        int consecutiveAgreements = RADAR_TRUST_COOLDOWN;
+
+        for (int i = 0; i < data.size(); i++) {
+            var m = data.get(i);
+            if (m.hasRadar() && m.hasUltrasonic()) {
+                double radarLevel = radarToWaterLevelCm(m.radarMm());
+                double ultrasonicLevel = ultrasonicToWaterLevelCm(m.ultrasonicMm());
+                boolean agrees = Math.abs(radarLevel - ultrasonicLevel) <= SENSOR_AGREEMENT_THRESHOLD_CM;
+
+                if (agrees) {
+                    consecutiveAgreements++;
+                    if (consecutiveAgreements >= RADAR_TRUST_COOLDOWN) {
+                        radarTrusted = true;
+                    }
+                } else {
+                    radarTrusted = false;
+                    consecutiveAgreements = 0;
+                }
+                levels[i] = radarTrusted ? radarLevel : ultrasonicLevel;
+            } else if (m.hasRadar()) {
+                levels[i] = radarToWaterLevelCm(m.radarMm());
+            } else if (m.hasUltrasonic()) {
+                levels[i] = ultrasonicToWaterLevelCm(m.ultrasonicMm());
+            } else {
+                levels[i] = Double.NaN;
+            }
+        }
+        return levels;
+    }
+
     private static final long SMOOTHING_WINDOW_MS = 60_000; // 1 minute
 
     /**
      * Weighted moving average with 1-minute window. Recent measurements
-     * get linearly higher weight.
+     * get linearly higher weight. Uses hysteresis-aware sensor selection.
      */
     static double[] smoothedWaterLevels(List<WaterDistanceService.Measurement> data) {
-        double[] raw = new double[data.size()];
-        for (int i = 0; i < data.size(); i++) {
-            raw[i] = bestWaterLevelCm(data.get(i));
-        }
+        double[] raw = bestWaterLevels(data);
         double[] smoothed = new double[data.size()];
         for (int i = 0; i < data.size(); i++) {
             long t = data.get(i).epochMillis();

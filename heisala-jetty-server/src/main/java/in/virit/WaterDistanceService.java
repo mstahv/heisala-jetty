@@ -15,6 +15,7 @@ import java.nio.file.StandardOpenOption;
 import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.List;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.locks.ReadWriteLock;
@@ -56,6 +57,12 @@ public class WaterDistanceService {
     private final ReadWriteLock lock = new ReentrantReadWriteLock();
     private final AtomicLong batchIdCounter = new AtomicLong(1);
 
+    // Sliding window median filter for radar — rejects sporadic outliers before
+    // they reach the rate-of-change filter (which would accept after 6 rejections).
+    private static final int MEDIAN_WINDOW = 5;
+    private final int[] radarMedianWindow = new int[MEDIAN_WINDOW];
+    private int radarMedianCount = 0;
+
     private int lastValidRadarMm = -1;
     private int lastValidUltrasonicMm = -1;
     private int consecutiveRadarRejections = 0;
@@ -90,6 +97,7 @@ public class WaterDistanceService {
         int filteredRadar = isPlausible(radarMm) ? radarMm : -1;
         int filteredUltrasonic = isPlausible(ultrasonicMm) ? ultrasonicMm : -1;
 
+        filteredRadar = medianFilterRadar(filteredRadar);
         filteredRadar = applyRateFilter(filteredRadar, true);
         filteredUltrasonic = applyRateFilter(filteredUltrasonic, false);
 
@@ -113,6 +121,27 @@ public class WaterDistanceService {
         } catch (IOException e) {
             LOG.error("Failed to append raw measurement to log", e);
         }
+    }
+
+    /**
+     * Sliding-window median filter for radar. Only plausible values enter the
+     * window; the median of the window is returned. This rejects up to
+     * (MEDIAN_WINDOW/2) sporadic outliers per window.
+     */
+    private int medianFilterRadar(int valueMm) {
+        if (valueMm < 0) return -1;
+
+        // Shift window and append new value
+        if (radarMedianCount < MEDIAN_WINDOW) {
+            radarMedianWindow[radarMedianCount++] = valueMm;
+        } else {
+            System.arraycopy(radarMedianWindow, 1, radarMedianWindow, 0, MEDIAN_WINDOW - 1);
+            radarMedianWindow[MEDIAN_WINDOW - 1] = valueMm;
+        }
+
+        int[] sorted = Arrays.copyOf(radarMedianWindow, radarMedianCount);
+        Arrays.sort(sorted);
+        return sorted[radarMedianCount / 2];
     }
 
     private int applyRateFilter(int valueMm, boolean radar) {
@@ -328,6 +357,7 @@ public class WaterDistanceService {
 
                     int filteredRadar = isPlausible(radar) ? radar : -1;
                     int filteredUltrasonic = isPlausible(ultrasonic) ? ultrasonic : -1;
+                    filteredRadar = medianFilterRadar(filteredRadar);
                     filteredRadar = applyRateFilter(filteredRadar, true);
                     filteredUltrasonic = applyRateFilter(filteredUltrasonic, false);
                     if (filteredRadar > 0 || filteredUltrasonic > 0) {
