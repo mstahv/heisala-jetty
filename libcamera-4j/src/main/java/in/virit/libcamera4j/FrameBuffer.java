@@ -1,5 +1,8 @@
 package in.virit.libcamera4j;
 
+import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
+
 /**
  * Represents a buffer for storing captured image data.
  *
@@ -16,7 +19,6 @@ public class FrameBuffer {
     private final CameraConfiguration configuration;
     private final int streamIndex;
     private final int bufferIndex;
-    private long mapHandle;
     private byte[] cachedData;
 
     /**
@@ -38,8 +40,9 @@ public class FrameBuffer {
     /**
      * Maps the buffer and returns its data as a byte array.
      *
-     * <p>This copies the buffer data into a Java byte array. For large buffers,
-     * consider using {@link #mapAndProcess(BufferProcessor)} instead.</p>
+     * <p>This copies the buffer data into a Java byte array, concatenating planes
+     * sequentially. It is now implemented on top of the zero-copy {@link #map()}
+     * path: for streaming/timelapse use, prefer {@link #map()} to avoid the copy.</p>
      *
      * @return the buffer data
      */
@@ -48,20 +51,17 @@ public class FrameBuffer {
             return cachedData;
         }
 
-        mapHandle = nativeMapBuffer(allocator.nativeHandle(), configuration.nativeHandle(),
-                                     streamIndex, bufferIndex);
-        if (mapHandle == 0) {
-            throw new LibCameraException("Failed to map buffer");
-        }
-
-        try {
-            int size = nativeGetBufferSize(mapHandle);
-            cachedData = new byte[size];
-            nativeCopyBuffer(mapHandle, cachedData, 0, size);
+        try (MappedFrame frame = map()) {
+            byte[] data = new byte[(int) frame.size()];
+            int offset = 0;
+            for (int i = 0; i < frame.planeCount(); i++) {
+                MemorySegment plane = frame.plane(i);
+                int len = (int) plane.byteSize();
+                MemorySegment.copy(plane, ValueLayout.JAVA_BYTE, 0, data, offset, len);
+                offset += len;
+            }
+            cachedData = data;
             return cachedData;
-        } finally {
-            nativeUnmapBuffer(mapHandle);
-            mapHandle = 0;
         }
     }
 
@@ -105,6 +105,31 @@ public class FrameBuffer {
     }
 
     /**
+     * Maps the buffer for zero-copy access via the Foreign Function &amp; Memory API.
+     *
+     * <p>Unlike {@link #getData()}, this does not copy the pixel data into a Java
+     * {@code byte[]}. Instead each plane is exposed as a {@link java.lang.foreign.MemorySegment}
+     * backed directly by the {@code mmap}'d native memory. The returned
+     * {@link MappedFrame} is {@link AutoCloseable} and must be closed (typically
+     * with try-with-resources) to unmap the buffer.</p>
+     *
+     * <p>Requires the JVM flag {@code --enable-native-access} (already set for the
+     * test runner in {@code pom.xml}).</p>
+     *
+     * <pre>{@code
+     * try (MappedFrame frame = buffer.map()) {
+     *     BufferedImage img = PixelFormatConverter.convert(
+     *         frame.contiguous(), width, height, stride, format);
+     * }
+     * }</pre>
+     *
+     * @return a mapped view of the buffer; close it to unmap
+     */
+    public MappedFrame map() {
+        return new MappedFrame(allocator, configuration, streamIndex, bufferIndex);
+    }
+
+    /**
      * Functional interface for processing buffer data without copying.
      */
     @FunctionalInterface
@@ -118,24 +143,17 @@ public class FrameBuffer {
      * @param processor the processor to call with the mapped buffer
      */
     public void mapAndProcess(BufferProcessor processor) {
-        long handle = nativeMapBuffer(allocator.nativeHandle(), configuration.nativeHandle(),
+        long handle = Native.fbMap(allocator.nativeHandle(), configuration.nativeHandle(),
                                        streamIndex, bufferIndex);
         if (handle == 0) {
             throw new LibCameraException("Failed to map buffer");
         }
 
         try {
-            int size = nativeGetBufferSize(handle);
+            int size = Native.fbSize(handle);
             processor.process(handle, size);
         } finally {
-            nativeUnmapBuffer(handle);
+            Native.fbUnmap(handle);
         }
     }
-
-    // Native methods
-    private static native long nativeMapBuffer(long allocatorHandle, long configHandle,
-                                                int streamIndex, int bufferIndex);
-    private static native void nativeUnmapBuffer(long mapHandle);
-    private static native int nativeGetBufferSize(long mapHandle);
-    private static native void nativeCopyBuffer(long mapHandle, byte[] dest, int offset, int length);
 }

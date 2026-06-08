@@ -81,7 +81,7 @@ public class Camera {
         if (acquired) {
             return;
         }
-        int result = nativeAcquire(nativeHandle);
+        int result = Native.camAcquire(nativeHandle);
         if (result != 0) {
             throw LibCameraException.forOperation("Camera.acquire", result);
         }
@@ -103,7 +103,7 @@ public class Camera {
         if (running) {
             throw new IllegalStateException("Camera must be stopped before releasing");
         }
-        nativeRelease(nativeHandle);
+        Native.camRelease(nativeHandle);
         acquired = false;
     }
 
@@ -127,7 +127,7 @@ public class Camera {
             roleValues[i] = roles[i].value();
         }
 
-        long configHandle = nativeGenerateConfiguration(nativeHandle, roleValues);
+        long configHandle = Native.camGenerateConfiguration(nativeHandle, roleValues);
         if (configHandle == 0) {
             throw new LibCameraException("Failed to generate configuration");
         }
@@ -153,7 +153,7 @@ public class Camera {
             throw new IllegalStateException("Camera must be stopped before reconfiguring");
         }
 
-        int result = nativeConfigure(nativeHandle, config.nativeHandle());
+        int result = Native.camConfigure(nativeHandle, config.nativeHandle());
         if (result != 0) {
             throw LibCameraException.forOperation("Camera.configure", result);
         }
@@ -187,7 +187,7 @@ public class Camera {
             throw new IllegalStateException("Camera must be configured before creating requests");
         }
 
-        long reqHandle = nativeCreateRequest(nativeHandle, cookie);
+        long reqHandle = Native.camCreateRequest(nativeHandle, cookie);
         if (reqHandle == 0) {
             throw new LibCameraException("Failed to create request");
         }
@@ -210,7 +210,7 @@ public class Camera {
             throw new IllegalStateException("Camera must be running to queue requests");
         }
 
-        int result = nativeQueueRequest(nativeHandle, request.nativeHandle());
+        int result = Native.camQueueRequest(nativeHandle, request.nativeHandle());
         if (result != 0) {
             throw LibCameraException.forOperation("Camera.queueRequest", result);
         }
@@ -241,7 +241,7 @@ public class Camera {
             return;
         }
 
-        int result = nativeStart(nativeHandle);
+        int result = Native.camStart(nativeHandle);
         if (result != 0) {
             throw LibCameraException.forOperation("Camera.start", result);
         }
@@ -257,7 +257,7 @@ public class Camera {
         if (!running) {
             return;
         }
-        nativeStop(nativeHandle);
+        Native.camStop(nativeHandle);
         running = false;
     }
 
@@ -269,7 +269,7 @@ public class Camera {
      * @return a completed request, or null
      */
     public Request pollCompletedRequest() {
-        long reqHandle = nativePollCompletedRequest(nativeHandle);
+        long reqHandle = Native.camPollCompletedRequest(nativeHandle);
         if (reqHandle == 0) {
             return null;
         }
@@ -354,14 +354,4 @@ public class Camera {
         return "Camera[id=" + id + ", acquired=" + acquired + ", running=" + running + "]";
     }
 
-    // Native methods
-    private native int nativeAcquire(long handle);
-    private native void nativeRelease(long handle);
-    private native long nativeGenerateConfiguration(long handle, int[] roles);
-    private native int nativeConfigure(long handle, long configHandle);
-    private native long nativeCreateRequest(long handle, long cookie);
-    private native int nativeQueueRequest(long handle, long requestHandle);
-    private native int nativeStart(long handle);
-    private native void nativeStop(long handle);
-    private native long nativePollCompletedRequest(long handle);
 }

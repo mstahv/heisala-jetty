@@ -78,7 +78,7 @@ public class CameraConfiguration implements Iterable<StreamConfiguration>, AutoC
      * @return the number of streams
      */
     public int size() {
-        return nativeSize(nativeHandle);
+        return Native.configSize(nativeHandle);
     }
 
     /**
@@ -110,7 +110,7 @@ public class CameraConfiguration implements Iterable<StreamConfiguration>, AutoC
      * @return the validation status
      */
     public Status validate() {
-        int result = nativeValidate(nativeHandle);
+        int result = Native.configValidate(nativeHandle);
         status = Status.fromValue(result);
         return status;
     }
@@ -148,7 +148,7 @@ public class CameraConfiguration implements Iterable<StreamConfiguration>, AutoC
     @Override
     public void close() {
         if (nativeHandle != 0) {
-            nativeDestroy(nativeHandle);
+            Native.configDestroy(nativeHandle);
             nativeHandle = 0;
         }
     }
@@ -158,17 +158,32 @@ public class CameraConfiguration implements Iterable<StreamConfiguration>, AutoC
         return "CameraConfiguration[streams=" + size() + ", status=" + status + "]";
     }
 
-    // Native methods
-    private native void nativeDestroy(long handle);
-    private native int nativeSize(long handle);
-    private native int nativeValidate(long handle);
+    // Stream configuration access - delegated to StreamConfiguration via the FFM layer
+    int nativeGetWidth(long handle, int index) {
+        return Native.configGetWidth(handle, index);
+    }
 
-    // Stream configuration access - delegated to StreamConfiguration
-    native int nativeGetWidth(long handle, int index);
-    native int nativeGetHeight(long handle, int index);
-    native int nativeGetStride(long handle, int index);
-    native int nativeGetPixelFormat(long handle, int index);
-    native void nativeSetSize(long handle, int index, int width, int height);
-    native void nativeSetPixelFormat(long handle, int index, int fourcc);
-    native void nativeSetBufferCount(long handle, int index, int count);
+    int nativeGetHeight(long handle, int index) {
+        return Native.configGetHeight(handle, index);
+    }
+
+    int nativeGetStride(long handle, int index) {
+        return Native.configGetStride(handle, index);
+    }
+
+    int nativeGetPixelFormat(long handle, int index) {
+        return Native.configGetPixelFormat(handle, index);
+    }
+
+    void nativeSetSize(long handle, int index, int width, int height) {
+        Native.configSetSize(handle, index, width, height);
+    }
+
+    void nativeSetPixelFormat(long handle, int index, int fourcc) {
+        Native.configSetPixelFormat(handle, index, fourcc);
+    }
+
+    void nativeSetBufferCount(long handle, int index, int count) {
+        Native.configSetBufferCount(handle, index, count);
+    }
 }

@@ -30,7 +30,7 @@ public class FrameBufferAllocator implements AutoCloseable {
             throw new IllegalStateException("Camera must be configured before creating allocator");
         }
 
-        this.nativeHandle = nativeCreate(camera.nativeHandle());
+        this.nativeHandle = Native.allocCreate(camera.nativeHandle());
         if (this.nativeHandle == 0) {
             throw new LibCameraException("Failed to create FrameBufferAllocator");
         }
@@ -65,7 +65,7 @@ public class FrameBufferAllocator implements AutoCloseable {
             throw new IllegalStateException("Buffers already allocated for stream " + streamIndex);
         }
 
-        int count = nativeAllocate(nativeHandle, configuration.nativeHandle(), streamIndex);
+        int count = Native.allocAllocate(nativeHandle, configuration.nativeHandle(), streamIndex);
         if (count < 0) {
             throw LibCameraException.forOperation("FrameBufferAllocator.allocate", count);
         }
@@ -102,14 +102,9 @@ public class FrameBufferAllocator implements AutoCloseable {
             return;
         }
         if (nativeHandle != 0) {
-            nativeDestroy(nativeHandle);
+            Native.allocDestroy(nativeHandle);
             nativeHandle = 0;
         }
         closed = true;
     }
-
-    // Native methods
-    private native long nativeCreate(long cameraHandle);
-    private native void nativeDestroy(long handle);
-    private native int nativeAllocate(long handle, long configHandle, int streamIndex);
 }

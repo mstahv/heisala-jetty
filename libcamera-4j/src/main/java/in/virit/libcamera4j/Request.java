@@ -88,7 +88,7 @@ public class Request {
             throw new IllegalStateException("Buffer already added for stream " + streamIndex);
         }
 
-        int result = nativeAddBuffer(nativeHandle, configuration.nativeHandle(),
+        int result = Native.reqAddBuffer(nativeHandle, configuration.nativeHandle(),
                                       streamIndex, allocator.nativeHandle(), bufferIndex);
         if (result != 0) {
             throw LibCameraException.forOperation("Request.addBuffer", result);
@@ -135,7 +135,7 @@ public class Request {
      * @return the status
      */
     public Status status() {
-        int value = nativeStatus(nativeHandle);
+        int value = Native.reqStatus(nativeHandle);
         return Status.fromValue(value);
     }
 
@@ -143,7 +143,7 @@ public class Request {
      * Reuses this request, keeping buffers attached.
      */
     public void reuse() {
-        nativeReuse(nativeHandle);
+        Native.reqReuse(nativeHandle);
     }
 
     /**
@@ -157,7 +157,7 @@ public class Request {
         if (bufferIndex < 0 || allocator == null) {
             return 0;
         }
-        return nativeGetTimestamp(nativeHandle, configuration.nativeHandle(),
+        return Native.reqGetTimestamp(nativeHandle, configuration.nativeHandle(),
                                    streamIndex, allocator.nativeHandle(), bufferIndex);
     }
 
@@ -172,7 +172,7 @@ public class Request {
         if (bufferIndex < 0 || allocator == null) {
             return 0;
         }
-        return nativeGetSequence(nativeHandle, configuration.nativeHandle(),
+        return Native.reqGetSequence(nativeHandle, configuration.nativeHandle(),
                                   streamIndex, allocator.nativeHandle(), bufferIndex);
     }
 
@@ -182,7 +182,7 @@ public class Request {
      * @return exposure time in microseconds
      */
     public long getExposureTimeMicros() {
-        return nativeGetExposureTime(nativeHandle);
+        return Native.reqGetExposureTime(nativeHandle);
     }
 
     /**
@@ -191,7 +191,7 @@ public class Request {
      * @return analogue gain (1.0 = no gain)
      */
     public double getAnalogueGain() {
-        return nativeGetAnalogueGain(nativeHandle);
+        return Native.reqGetAnalogueGain(nativeHandle);
     }
 
     /**
@@ -200,7 +200,7 @@ public class Request {
      * @return digital gain (1.0 = no gain)
      */
     public double getDigitalGain() {
-        return nativeGetDigitalGain(nativeHandle);
+        return Native.reqGetDigitalGain(nativeHandle);
     }
 
     /**
@@ -209,7 +209,7 @@ public class Request {
      * @return array of [red gain, blue gain]
      */
     public double[] getColourGains() {
-        return nativeGetColourGains(nativeHandle);
+        return Native.reqGetColourGains(nativeHandle);
     }
 
     /**
@@ -218,7 +218,7 @@ public class Request {
      * @return colour temperature in Kelvin, or 0 if not available
      */
     public int getColourTemperature() {
-        return nativeGetColourTemperature(nativeHandle);
+        return Native.reqGetColourTemperature(nativeHandle);
     }
 
     /**
@@ -227,7 +227,7 @@ public class Request {
      * @return lux value, or 0 if not available
      */
     public double getLux() {
-        return nativeGetLux(nativeHandle);
+        return Native.reqGetLux(nativeHandle);
     }
 
     /**
@@ -237,7 +237,7 @@ public class Request {
      * @return array of 4 black level values (one per channel)
      */
     public int[] getSensorBlackLevels() {
-        return nativeGetSensorBlackLevels(nativeHandle);
+        return Native.reqGetSensorBlackLevels(nativeHandle);
     }
 
     /**
@@ -247,7 +247,7 @@ public class Request {
      * @return array of 9 values representing the 3x3 matrix (row-major)
      */
     public double[] getColourCorrectionMatrix() {
-        return nativeGetColourCorrectionMatrix(nativeHandle);
+        return Native.reqGetColourCorrectionMatrix(nativeHandle);
     }
 
     /**
@@ -256,7 +256,7 @@ public class Request {
      * @param mode the autofocus mode
      */
     public void setAfMode(AfMode mode) {
-        nativeSetAfMode(nativeHandle, mode.value());
+        Native.reqSetAfMode(nativeHandle, mode.value());
     }
 
     /**
@@ -276,7 +276,7 @@ public class Request {
      * @param position the lens position in dioptres
      */
     public void setLensPosition(float position) {
-        nativeSetLensPosition(nativeHandle, position);
+        Native.reqSetLensPosition(nativeHandle, position);
     }
 
     /**
@@ -287,7 +287,7 @@ public class Request {
      * @param enable true to enable auto-exposure, false for manual control
      */
     public void setAeEnable(boolean enable) {
-        nativeSetAeEnable(nativeHandle, enable);
+        Native.reqSetAeEnable(nativeHandle, enable);
     }
 
     /**
@@ -308,7 +308,7 @@ public class Request {
      * @param microseconds exposure time in microseconds
      */
     public void setExposureTime(int microseconds) {
-        nativeSetExposureTime(nativeHandle, microseconds);
+        Native.reqSetExposureTime(nativeHandle, microseconds);
     }
 
     /**
@@ -328,7 +328,7 @@ public class Request {
      * @param gain analogue gain (1.0 = minimum gain)
      */
     public void setAnalogueGain(float gain) {
-        nativeSetAnalogueGain(nativeHandle, gain);
+        Native.reqSetAnalogueGain(nativeHandle, gain);
     }
 
     /**
@@ -361,26 +361,4 @@ public class Request {
         return "Request[cookie=" + cookie + ", status=" + status() + "]";
     }
 
-    // Native methods
-    private native int nativeAddBuffer(long handle, long configHandle, int streamIndex,
-                                        long allocatorHandle, int bufferIndex);
-    private native int nativeReuse(long handle);
-    private native int nativeStatus(long handle);
-    private native long nativeGetTimestamp(long handle, long configHandle, int streamIndex,
-                                            long allocatorHandle, int bufferIndex);
-    private native long nativeGetSequence(long handle, long configHandle, int streamIndex,
-                                           long allocatorHandle, int bufferIndex);
-    private native long nativeGetExposureTime(long handle);
-    private native double nativeGetAnalogueGain(long handle);
-    private native double nativeGetDigitalGain(long handle);
-    private native double[] nativeGetColourGains(long handle);
-    private native int nativeGetColourTemperature(long handle);
-    private native double nativeGetLux(long handle);
-    private native int[] nativeGetSensorBlackLevels(long handle);
-    private native double[] nativeGetColourCorrectionMatrix(long handle);
-    private native void nativeSetAfMode(long handle, int mode);
-    private native void nativeSetLensPosition(long handle, float position);
-    private native void nativeSetAeEnable(long handle, boolean enable);
-    private native void nativeSetExposureTime(long handle, int microseconds);
-    private native void nativeSetAnalogueGain(long handle, float gain);
 }

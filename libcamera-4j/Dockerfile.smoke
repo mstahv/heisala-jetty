@@ -1,0 +1,14 @@
+# Camera-free FFM smoke test: validates the Java FFM bindings against the real
+# libcamera4j.so + libcamera 0.7.1 runtime, with no camera hardware.
+FROM libcamera4j-builder
+
+RUN apt-get update && apt-get install -y openjdk-25-jdk-headless && rm -rf /var/lib/apt/lists/*
+
+# Install the freshly built shared library on the loader path.
+RUN cp /build/output/libcamera4j.so /usr/local/lib/ && ldconfig
+
+WORKDIR /app
+COPY target/classes ./classes
+COPY target/test-classes ./test-classes
+
+CMD ["java", "--enable-native-access=ALL-UNNAMED", "-cp", "classes:test-classes", "in.virit.libcamera4j.Smoke"]

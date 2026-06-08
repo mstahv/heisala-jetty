@@ -33,6 +33,7 @@ ENV JAVA_HOME=/usr/lib/jvm/default-java
 # Copy native source files
 WORKDIR /build
 COPY src/main/native/CMakeLists.txt ./
+COPY src/main/native/libcamera4j.h ./
 COPY src/main/native/libcamera4j.cpp ./
 
 # Build the native library

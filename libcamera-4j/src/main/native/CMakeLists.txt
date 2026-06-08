@@ -4,28 +4,8 @@ project(libcamera4j VERSION 1.0.0 LANGUAGES CXX)
 set(CMAKE_CXX_STANDARD 17)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 
-# Find JNI - only need headers, not AWT
-find_package(Java COMPONENTS Development)
-find_path(JNI_INCLUDE_DIR jni.h
-    HINTS
-        $ENV{JAVA_HOME}/include
-        /usr/lib/jvm/default-java/include
-        /usr/lib/jvm/java-21-openjdk-arm64/include
-        /usr/lib/jvm/java-17-openjdk-arm64/include
-        /usr/lib/jvm/java-17-openjdk-amd64/include
-)
-find_path(JNI_INCLUDE_DIR_PLATFORM jni_md.h
-    HINTS
-        ${JNI_INCLUDE_DIR}/linux
-        $ENV{JAVA_HOME}/include/linux
-)
-
-if(NOT JNI_INCLUDE_DIR)
-    message(FATAL_ERROR "Could not find jni.h. Set JAVA_HOME or install JDK.")
-endif()
-
-set(JNI_INCLUDE_DIRS ${JNI_INCLUDE_DIR} ${JNI_INCLUDE_DIR_PLATFORM})
-message(STATUS "JNI_INCLUDE_DIRS=${JNI_INCLUDE_DIRS}")
+# No JNI needed: the Java side binds this shim via the Foreign Function & Memory
+# API (Project Panama), so we only expose a flat C ABI (see libcamera4j.h).
 
 # Find libcamera using pkg-config
 find_package(PkgConfig REQUIRED)
@@ -40,7 +20,7 @@ add_library(camera4j SHARED
 )
 
 target_include_directories(camera4j PRIVATE
-    ${JNI_INCLUDE_DIRS}
+    ${CMAKE_CURRENT_SOURCE_DIR}
     ${LIBCAMERA_INCLUDE_DIRS}
 )
 

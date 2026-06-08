@@ -40,7 +40,7 @@ public class CameraManager implements AutoCloseable {
     private Consumer<Camera> cameraRemovedListener;
 
     private CameraManager() {
-        this.nativeHandle = nativeCreate();
+        this.nativeHandle = Native.cmCreate();
         if (this.nativeHandle == 0) {
             throw new LibCameraException("Failed to create CameraManager");
         }
@@ -68,20 +68,22 @@ public class CameraManager implements AutoCloseable {
             return;
         }
 
-        int result = nativeStart(nativeHandle);
+        int result = Native.cmStart(nativeHandle);
         if (result != 0) {
             throw LibCameraException.forOperation("CameraManager.start", result);
         }
 
         // Enumerate cameras
         cameras.clear();
-        String[] cameraIds = nativeGetCameraIds(nativeHandle);
-        if (cameraIds != null) {
-            for (String id : cameraIds) {
-                long camHandle = nativeGetCamera(nativeHandle, id);
-                if (camHandle != 0) {
-                    cameras.add(new Camera(id, camHandle));
-                }
+        int count = Native.cmCameraCount(nativeHandle);
+        for (int i = 0; i < count; i++) {
+            String id = Native.cmCameraId(nativeHandle, i);
+            if (id == null) {
+                continue;
+            }
+            long camHandle = Native.cmGetCamera(nativeHandle, id);
+            if (camHandle != 0) {
+                cameras.add(new Camera(id, camHandle));
             }
         }
 
@@ -100,7 +102,7 @@ public class CameraManager implements AutoCloseable {
         }
 
         cameras.clear();
-        nativeStop(nativeHandle);
+        Native.cmStop(nativeHandle);
 
         started = false;
     }
@@ -165,25 +167,15 @@ public class CameraManager implements AutoCloseable {
      * @return the version string
      */
     public static String version() {
-        NativeLoader.load();
-        return nativeVersion();
+        return Native.cmVersion();
     }
 
     @Override
     public void close() {
         stop();
         if (nativeHandle != 0) {
-            nativeDestroy(nativeHandle);
+            Native.cmDestroy(nativeHandle);
             nativeHandle = 0;
         }
     }
-
-    // Native methods
-    private native long nativeCreate();
-    private native void nativeDestroy(long handle);
-    private native int nativeStart(long handle);
-    private native void nativeStop(long handle);
-    private native String[] nativeGetCameraIds(long handle);
-    private native long nativeGetCamera(long handle, String cameraId);
-    private static native String nativeVersion();
 }

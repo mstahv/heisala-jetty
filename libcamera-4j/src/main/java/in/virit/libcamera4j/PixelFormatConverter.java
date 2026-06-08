@@ -1,11 +1,75 @@
 package in.virit.libcamera4j;
 
 import java.awt.image.BufferedImage;
+import java.lang.foreign.MemorySegment;
+import java.lang.foreign.ValueLayout;
 
 /**
  * Converts raw pixel data from various formats to BufferedImage.
  */
 public class PixelFormatConverter {
+
+    /**
+     * Zero-copy conversion: reads pixels straight from a mapped
+     * {@link MemorySegment} (see {@link FrameBuffer#map()}) instead of a
+     * heap {@code byte[]}, avoiding a full-frame copy on every capture.
+     *
+     * <p>The segment must be a single contiguous plane (use
+     * {@link MappedFrame#contiguous()}). Prototype: YU12/I420 is implemented
+     * natively against the segment; other formats copy into a {@code byte[]}
+     * and delegate to the existing converters.</p>
+     *
+     * @param data   the mapped frame data
+     * @param width  image width
+     * @param height image height
+     * @param stride bytes per row
+     * @param format the pixel format
+     * @return the converted BufferedImage
+     */
+    public static BufferedImage convert(MemorySegment data, int width, int height, int stride, PixelFormat format) {
+        String formatStr = format.fourccString();
+
+        return switch (formatStr) {
+            case "YU12", "I420" -> convertYu12(data, width, height, stride);
+            // Not yet ported to zero-copy in this prototype: copy the segment
+            // into a byte[] and reuse the existing array converters.
+            default -> {
+                byte[] copy = data.toArray(ValueLayout.JAVA_BYTE);
+                yield convert(copy, width, height, stride, format);
+            }
+        };
+    }
+
+    private static BufferedImage convertYu12(MemorySegment data, int width, int height, int stride) {
+        BufferedImage image = new BufferedImage(width, height, BufferedImage.TYPE_INT_RGB);
+        long len = data.byteSize();
+
+        int yPlaneSize = stride * height;
+        int uvStride = stride / 2;
+        int uvHeight = height / 2;
+        int uPlaneOffset = yPlaneSize;
+        int vPlaneOffset = yPlaneSize + uvStride * uvHeight;
+
+        for (int y = 0; y < height; y++) {
+            for (int x = 0; x < width; x++) {
+                int yOffset = y * stride + x;
+                int uvX = x / 2;
+                int uvY = y / 2;
+                int uOffset = uPlaneOffset + uvY * uvStride + uvX;
+                int vOffset = vPlaneOffset + uvY * uvStride + uvX;
+
+                if (yOffset >= len || uOffset >= len || vOffset >= len) continue;
+
+                int yVal = data.get(ValueLayout.JAVA_BYTE, yOffset) & 0xFF;
+                int u = (data.get(ValueLayout.JAVA_BYTE, uOffset) & 0xFF) - 128;
+                int v = (data.get(ValueLayout.JAVA_BYTE, vOffset) & 0xFF) - 128;
+
+                image.setRGB(x, y, yuvToRgb(yVal, u, v));
+            }
+        }
+
+        return image;
+    }
 
     /**
      * Converts raw frame data to a BufferedImage based on the pixel format.

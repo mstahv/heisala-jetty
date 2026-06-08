@@ -7,11 +7,12 @@ Java bindings for the [libcamera](https://libcamera.org/) camera stack, designed
 **On Mac (for building):**
 - Docker Desktop
 - Maven 3.x
-- Java 17+
+- Java 25 (matches the compiler target)
 - [JBang](https://www.jbang.dev/) (install with `curl -Ls https://sh.jbang.dev | bash -s - app setup`)
 
 **On Raspberry Pi (for running):**
-- Java 17+
+- Java 22+ (uses the finalized Foreign Function & Memory API; Java 25 recommended)
+- Run with `--enable-native-access=ALL-UNNAMED` (otherwise the JVM prints a native-access warning)
 - libcamera runtime (pre-installed on Raspberry Pi OS)
 
 ## Quick Start (Build on Mac, Run on Pi)
