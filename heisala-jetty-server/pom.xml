@@ -20,7 +20,7 @@
         <project.reporting.outputEncoding>UTF-8</project.reporting.outputEncoding>
         <quarkus.platform.artifact-id>quarkus-bom</quarkus.platform.artifact-id>
         <quarkus.platform.group-id>io.quarkus.platform</quarkus.platform.group-id>
-        <quarkus.platform.version>3.31.2</quarkus.platform.version>
+        <quarkus.platform.version>3.36.1</quarkus.platform.version>
         <skipITs>true</skipITs>
         <surefire-plugin.version>3.5.4</surefire-plugin.version>
 <!--        <quarkus.package.jar.type>uber-jar</quarkus.package.jar.type>-->
@@ -43,7 +43,7 @@
             <dependency>
                 <groupId>com.vaadin</groupId>
                 <artifactId>vaadin-bom</artifactId>
-                <version>25.1.0-beta3</version>
+                <version>25.2.0-beta1</version>
                 <type>pom</type>
                 <scope>import</scope>
             </dependency>
@@ -54,7 +54,7 @@
         <dependency>
             <groupId>com.vaadin</groupId>
             <artifactId>vaadin-quarkus-extension</artifactId>
-            <version>25.1.0-beta3</version>
+            <version>25.2.0-beta1</version>
         </dependency>
         <dependency>
             <groupId>com.vaadin</groupId>
@@ -69,7 +69,7 @@
         <dependency>
             <groupId>in.virit</groupId>
             <artifactId>viritin</artifactId>
-            <version>3.2.1-SNAPSHOT</version>
+            <version>3.5.0</version>
         </dependency>
 
         <dependency>
